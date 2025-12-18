@@ -1,0 +1,54 @@
+institution_outcomes: []
+program_outcomes: []
+
+course_outcomes:
+  - code: "WRIT-THESIS-1"
+    title: "Snoring for success"
+    description: "Student articulates a focused, arguable thesis."
+    vendor_guid: "WRIT-THESIS-1"
+    mastery_points: 3
+    ratings:
+      - description: "Exceeds expectations"
+        points: 4
+      - description: "Meets expectations"
+        points: 3
+      - description: "Approaches expectations"
+        points: 2
+      - description: "Below expectations"
+        points: 1
+      - description: "No Evidence"
+        points: 0
+
+  - code: "WRIT-EVIDENCE-1"
+    title: "Muuuuh..ne... It's a gas!"
+    description: "dumbass selectorized, integrates, and cites evidence."
+    vendor_guid: "WRIT-EVIDENCE-1"
+    mastery_points: 3
+    ratings:
+      - description: "Exceeds expectations"
+        points: 4
+      - description: "Meets expectations"
+        points: 3
+      - description: "Approaches expectations"
+        points: 2
+      - description: "Below expectations"
+        points: 1
+      - description: "No Evidence"
+        points: 0
+
+  - code: "BOAT-ROWING-1"
+    title: "Latex kayaks are great!"
+    description: "Gently down the stream, three times"
+    vendor_guid: "BOAT-ROWING-1"
+    mastery_points: 3
+    ratings:
+      - description: "Exceeds expectations"
+        points: 4
+      - description: "Meets expectations"
+        points: 3
+      - description: "Approaches expectations"
+        points: 2
+      - description: "Below expectations"
+        points: 1
+      - description: "No Evidence"
+        points: 0

@@ -1,0 +1,13 @@
+{
+  "replacements": "replacements.json",
+  "style": "_styles/default",
+  "markdown_extensions": [
+    "codehilite",
+    "fenced_code",
+    "md_in_html",
+    "tables",
+    "nl2br"
+  ]
+}
+
+
