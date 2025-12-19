@@ -1,0 +1,24 @@
+title: "Aeroplane Rubric"
+free_form_comments: false
+
+criteria:
+  # Local row, pure rubric
+  - id: "organization"
+    kind: "local"
+    description: "Organization and coherence"
+    ratings:
+      - description: "Excellent"
+        points: 4
+      - description: "Proficient"
+        points: 3
+      - description: "Developing"
+        points: 2
+      - description: "Beginning"
+        points: 1
+
+  # Outcome-aligned row (drives assessment reporting)
+  - id: "thesis_outcome"
+    kind: "outcome"
+    outcome_code: "WRIT-THESIS-1"   # references an outcome defined elsewhere
+    use_for_scoring: true           # or false to track outcome without affecting grade
+    points: 4                       # optional override for scoring

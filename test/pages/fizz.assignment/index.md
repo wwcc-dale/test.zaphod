@@ -1,12 +1,12 @@
 ---
-name: "Week 1 Reading Response"
+name: "Take out the papers and the trash"
 type: "Assignment"
 modules:
-  - "Module 1: Getting Started"
+  - "Credit 3"
 published: true
 
 # assignment settings
-points_possible: 20
+points_possible: 31
 submission_types:
   - "online_upload"
 allowed_extensions:
@@ -17,11 +17,12 @@ allowed_extensions:
 peer_reviews: false
 group_category: null
 ---
+
 # This is the first assignment in the course.
 
-==COURSE_TITLE==
-==Course_Code==
-==INSTRUCTOR_EMAIL==
+{{COURSE_TITLE}}
+{{Course_Code}}
+{{INSTRUCTOR_EMAIL}}
 
 
 ## This assignment's description includes some fancy features of `markdown2canvas`

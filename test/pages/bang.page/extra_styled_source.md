@@ -1,3 +1,11 @@
+
+<main class="page">
+    <p>a closed link</p>
+
+
+
+#### peek a boo!
+
 # Bangers & Mashie
 
 This content lives in `/home/chapman/courses/test/pages/intro.page` and is synced to Canvas.
@@ -6,3 +14,6 @@ This content lives in `/home/chapman/courses/test/pages/intro.page` and is synce
 
 - Author pages in Markdown.
 - Publish to Canvas via `markdown2canvas`.
+
+&copy; 2025 : Built with  Zaphod
+</main>

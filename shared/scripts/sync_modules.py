@@ -9,18 +9,16 @@ Ensure Canvas modules contain all items declared in meta.json for:
   - .file        -> Canvas File module items
   - .link        -> Canvas ExternalUrl module items
 
-For each content folder under pages/, this script:
+Module ordering:
 
-  1. Reads meta.json and looks for:
-       - type: "Page", "Assignment", "File", or "Link" (case-insensitive)
-       - name: title/name used in Canvas
-       - modules: list of module names
-       - indent: optional integer indent level
-       - (file) filename, title
-       - (link) external_url, new_tab
-  2. Finds or creates each listed module.
-  3. Ensures the corresponding Canvas item is present in that module
-     with the appropriate type and indent, creating it if missing.
+  - Reads _course_metadata/module_order.yaml if present:
+        modules:
+          - "Module 0: Start Here"
+          - "Module 1: Getting Started"
+          - ...
+  - After syncing items, reorders modules to match that list first,
+    then any remaining modules in name order.
+  - Writes the final module order back to module_order.yaml.
 
 Assumptions:
   - Run from the course root (where pages/ lives).
@@ -37,15 +35,18 @@ import json
 import os
 
 from canvasapi import Canvas
+import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
+COURSE_META_DIR = COURSE_ROOT / "_course_metadata"
+MODULE_ORDER_PATH = COURSE_META_DIR / "module_order.yaml"
 
 
 # ---------- Canvas helpers ----------
 
-def get_canvas():
+def get_canvas() -> Canvas:
     cred_path = os.environ.get("CANVAS_CREDENTIAL_FILE")
     if not cred_path:
         raise SystemExit("CANVAS_CREDENTIAL_FILE is not set")
@@ -274,6 +275,62 @@ def sync_link(course, folder: Path, meta: dict):
         print(f"[modules] {folder.name}: added to module '{mname}' (ExternalUrl)")
 
 
+# ---------- Module order helpers ----------
+
+def load_module_order() -> list[str]:
+    """
+    Load desired module order from module_order.yaml, if present.
+    """
+    if not MODULE_ORDER_PATH.is_file():
+        return []
+    data = yaml.safe_load(MODULE_ORDER_PATH.read_text(encoding="utf-8")) or {}
+    mods = data.get("modules") or []
+    return [str(m) for m in mods]
+
+
+def apply_module_order(course, desired_order: list[str]):
+    """
+    Reorder modules:
+
+      1) Modules whose names appear in desired_order, in that sequence.
+      2) Any remaining modules, sorted by name.
+    """
+    modules = list(course.get_modules())
+    modules_by_name = {m.name: m for m in modules}
+
+    position = 1
+
+    # 1) Apply explicit order
+    for name in desired_order:
+        m = modules_by_name.get(name)
+        if not m:
+            continue
+        m.edit(module={"position": position})
+        position += 1
+
+    # 2) Remaining modules
+    remaining = [m for m in modules if m.name not in desired_order]
+    for m in sorted(remaining, key=lambda x: x.name):
+        m.edit(module={"position": position})
+        position += 1
+
+
+def write_module_order(course):
+    """
+    Write the final module order from Canvas back to module_order.yaml.
+    """
+    modules = sorted(course.get_modules(), key=lambda x: x.position)
+    names = [m.name for m in modules]
+
+    COURSE_META_DIR.mkdir(parents=True, exist_ok=True)
+    data = {"modules": names}
+    MODULE_ORDER_PATH.write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    print(f"[modules] Wrote module order to {MODULE_ORDER_PATH}")
+
+
 # ---------- Main ----------
 
 def main():
@@ -287,6 +344,8 @@ def main():
     if not PAGES_DIR.exists():
         raise SystemExit(f"No pages directory at {PAGES_DIR}")
 
+    desired_module_order = load_module_order()
+
     print(f"[modules] Syncing modules in course {course.name} (ID {course_id})")
 
     content_dirs = []
@@ -295,6 +354,8 @@ def main():
 
     if not content_dirs:
         print("[modules] No content folders under pages/")
+        # Still write current module order for reference
+        write_module_order(course)
         return
 
     for folder in content_dirs:
@@ -315,6 +376,14 @@ def main():
             sync_link(course, folder, meta)
         else:
             print(f"[modules:warn] {folder.name}: unsupported type '{t}' in meta.json")
+
+    # Apply desired module order if provided
+    if desired_module_order:
+        print("[modules] Applying module order from module_order.yaml")
+        apply_module_order(course, desired_module_order)
+
+    # Persist final module order back to YAML
+    write_module_order(course)
 
     print("[modules] Done.")
 

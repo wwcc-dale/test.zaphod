@@ -2,8 +2,7 @@
 name: "Bangers & Mashie"
 type: "Page"
 modules:
-  - "Week 1"
-  - "Sausages"
+  - "Credit 4"
 published: true
 ---
 
