@@ -2,28 +2,106 @@
 """
 prune_canvas_content.py
 
-Reconcile Canvas pages/assignments against the current Zaphod/markdown2canvas
-flat-file repo, deleting items that no longer exist locally.
+Reconcile Canvas content and module membership against the current
+Zaphod/markdown2canvas flat-file repo for the current course.
+
+Behaviors:
+
+1) Content pruning
+   - Pages: delete Canvas pages whose titles are not present in any .page meta.json.
+   - Assignments: optionally delete Canvas assignments whose names are not present
+     in any .assignment meta.json.
+
+2) Module-item pruning
+   - For pages, assignments, files, and links that STILL exist:
+       * Read their `modules` list from meta.json.
+       * For each module in Canvas containing that item:
+           - If the module name is NOT in the desired list, delete that module item
+             (but keep the underlying page/assignment/file/link).
+
+3) Empty module pruning
+   - After adjusting module items, delete any modules that have no items.
 
 Safety:
 - Default is dry-run (no deletions).
-- Use --apply to actually delete.
-- Matching is by exact title/name.
+- Use --apply to actually delete content and module items.
+- Use --prune-assignments to include assignments in content pruning.
 """
 
 from pathlib import Path
 import argparse
 import json
+import os
 
+from canvasapi import Canvas
 from markdown2canvas.setup_functions import make_canvas_api_obj
-from markdown2canvas.exception import DoesntExist  # if you want to reuse it
-
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SHARED_ROOT = SCRIPT_DIR.parent
 COURSES_ROOT = SHARED_ROOT.parent
-COURSE_ROOT = Path.cwd()          # current course
+COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
+
+
+def load_local_meta_maps():
+    """
+    Build mappings from local meta.json for use in module pruning.
+
+    Returns:
+        page_modules_by_title:         {page_title: [module_names]}
+        assignment_modules_by_name:    {assignment_name: [module_names]}
+        file_modules_by_filename:      {filename: [module_names]}
+        link_modules_by_url:           {external_url: [module_names]}
+    """
+    page_modules_by_title = {}
+    assignment_modules_by_name = {}
+    file_modules_by_filename = {}
+    link_modules_by_url = {}
+
+    if not PAGES_DIR.exists():
+        print(f"[prune] No pages directory at {PAGES_DIR}")
+        return (
+            page_modules_by_title,
+            assignment_modules_by_name,
+            file_modules_by_filename,
+            link_modules_by_url,
+        )
+
+    for meta_path in PAGES_DIR.rglob("meta.json"):
+        try:
+            data = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"[prune:warn] Skipping {meta_path}: failed to parse JSON ({e})")
+            continue
+
+        t = str(data.get("type", "")).lower()
+        mods = data.get("modules") or []
+        if not mods:
+            continue
+
+        if t == "page":
+            title = data.get("name")
+            if title:
+                page_modules_by_title[title] = mods
+        elif t == "assignment":
+            name = data.get("name")
+            if name:
+                assignment_modules_by_name[name] = mods
+        elif t == "file":
+            filename = data.get("filename")
+            if filename:
+                file_modules_by_filename[filename] = mods
+        elif t == "link":
+            url = data.get("external_url")
+            if url:
+                link_modules_by_url[url] = mods
+
+    return (
+        page_modules_by_title,
+        assignment_modules_by_name,
+        file_modules_by_filename,
+        link_modules_by_url,
+    )
 
 
 def load_local_names():
@@ -32,19 +110,19 @@ def load_local_names():
     assignment_names = set()
 
     if not PAGES_DIR.exists():
-        raise SystemExit(f"No pages directory at {PAGES_DIR}")
+        print(f"[prune] No pages directory at {PAGES_DIR}")
+        return page_names, assignment_names
 
     for meta_path in PAGES_DIR.rglob("meta.json"):
         try:
             data = json.loads(meta_path.read_text(encoding="utf-8"))
         except Exception as e:
-            print(f"[warn] Skipping {meta_path}: failed to parse JSON ({e})")
+            print(f"[prune:warn] Skipping {meta_path}: failed to parse JSON ({e})")
             continue
 
         t = str(data.get("type", "")).lower()
         name = data.get("name")
         if not name:
-            print(f"[warn] {meta_path} has no 'name'; skipping")
             continue
 
         if t == "page":
@@ -65,88 +143,220 @@ def load_canvas_sets(course):
 def delete_extra_pages(course, extra_pages, apply=False):
     """Delete or report Canvas pages that are not in the repo."""
     if not extra_pages:
-        print("No extra pages to delete.")
+        print("[prune] No extra pages to delete.")
         return
 
-    print("\nExtra Canvas pages (not present in repo):")
+    print("\n[prune] Extra Canvas pages (not present in repo):")
     for title in sorted(extra_pages):
         print(f"  - {title}")
 
     if not apply:
-        print("\nDry-run only (no deletions). Re-run with --apply to delete.")
+        print("[prune] Dry-run (no page deletions).")
         return
 
-    print("\nDeleting extra pages...")
+    print("[prune] Deleting extra pages...")
     for page in course.get_pages():
         if page.title in extra_pages:
             try:
                 print(f"  deleting page: {page.title}")
                 page.delete()
             except Exception as e:
-                print(f"  [err] failed to delete page '{page.title}': {e}")
+                print(f"  [prune:err] failed to delete page '{page.title}': {e}")
 
 
 def delete_extra_assignments(course, extra_assignments, apply=False):
     """Delete or report Canvas assignments that are not in the repo."""
     if not extra_assignments:
-        print("No extra assignments to delete.")
+        print("[prune] No extra assignments to delete.")
         return
 
-    print("\nExtra Canvas assignments (not present in repo):")
+    print("\n[prune] Extra Canvas assignments (not present in repo):")
     for name in sorted(extra_assignments):
         print(f"  - {name}")
 
     if not apply:
-        print("\nDry-run only (no deletions). Re-run with --apply to delete.")
+        print("[prune] Dry-run (no assignment deletions).")
         return
 
-    print("\nDeleting extra assignments...")
+    print("[prune] Deleting extra assignments...")
     for a in course.get_assignments():
         if a.name in extra_assignments:
             try:
                 print(f"  deleting assignment: {a.name}")
                 a.delete()
             except Exception as e:
-                print(f"  [err] failed to delete assignment '{a.name}': {e}")
+                print(f"  [prune:err] failed to delete assignment '{a.name}': {e}")
+
+
+# ---------- Module-item pruning ----------
+
+def prune_module_items(
+    course,
+    page_modules_by_title,
+    assignment_modules_by_name,
+    file_modules_by_filename,
+    link_modules_by_url,
+    apply=False,
+):
+    """
+    Remove module items whose module name is no longer listed in meta.json.
+
+    Only affects module membership; underlying content remains.
+    """
+
+    if not apply:
+        print("\n[prune] Module-item pruning: dry-run (no deletions).")
+    else:
+        print("\n[prune] Module-item pruning: deleting extra module items.")
+
+    # Build lookup maps.
+    files_by_id = {f.id: f for f in course.get_files()}
+    pages_by_title = {p.title: p for p in course.get_pages()}
+    assignments_by_id = {a.id: a for a in course.get_assignments()}
+
+    # Reverse map slug -> title for pages.
+    slug_to_title = {
+        getattr(p, "url", None): title for title, p in pages_by_title.items()
+    }
+
+    for module in course.get_modules():
+        for item in module.get_module_items():
+            mname = module.name
+            itype = item.type
+
+            desired_modules = None
+
+            if itype == "Page":
+                page_url = getattr(item, "page_url", None)
+                page_title = slug_to_title.get(page_url)
+                if page_title:
+                    desired_modules = page_modules_by_title.get(page_title)
+
+            elif itype == "Assignment":
+                content_id = getattr(item, "content_id", None)
+                a = assignments_by_id.get(content_id)
+                if a:
+                    desired_modules = assignment_modules_by_name.get(a.name)
+
+            elif itype == "File":
+                content_id = getattr(item, "content_id", None)
+                f = files_by_id.get(content_id)
+                if f:
+                    desired_modules = file_modules_by_filename.get(f.filename)
+
+            elif itype == "ExternalUrl":
+                external_url = getattr(item, "external_url", None)
+                if external_url:
+                    desired_modules = link_modules_by_url.get(external_url)
+
+            # If desired_modules is None, we have no repo metadata for this item: leave as-is.
+            if desired_modules is None:
+                continue
+
+            # If this module name is not in desired list, remove the module item.
+            if mname not in desired_modules:
+                msg = f"[prune] removing module item '{item.title}' from module '{mname}' ({itype})"
+                if not apply:
+                    print(msg)
+                else:
+                    try:
+                        print(msg)
+                        item.delete()
+                    except Exception as e:
+                        print(f"[prune:err] failed to delete module item '{item.title}' in '{mname}': {e}")
+
+
+# ---------- Empty module pruning ----------
+
+def delete_empty_modules(course, apply=False):
+    """
+    Delete modules that have no items.
+    """
+    print("\n[prune] Checking for empty modules...")
+    for module in course.get_modules():
+        items = list(module.get_module_items())
+        if items:
+            continue
+
+        msg = f"[prune] deleting empty module '{module.name}'"
+        if not apply:
+            print(msg + " (dry-run)")
+        else:
+            try:
+                print(msg)
+                module.delete()
+            except Exception as e:
+                print(f"[prune:err] failed to delete module '{module.name}': {e}")
+
+AUTO_WORK_FILES = {
+    "styled_source.md",
+    "extra_styled_source.html",
+    "result.html",
+    "source.md",
+    "meta.json"
+}
+
+def cleanup_work_files():
+    """
+    Remove auto-generated work files under pages/ to keep the repo clean.
+    """
+    if not PAGES_DIR.exists():
+        return
+
+    print("\n[prune] Cleaning up auto-generated work files...")
+    removed = 0
+    for f in PAGES_DIR.rglob("*"):
+        if f.is_file() and f.name in AUTO_WORK_FILES:
+            try:
+                f.unlink()
+                removed += 1
+            except Exception as e:
+                print(f"[prune:warn] failed to remove {f}: {e}")
+    print(f"[prune] Removed {removed} work files.")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Prune Canvas pages/assignments not present in the local Zaphod repo."
+        description="Prune Canvas content and module items not present in the local Zaphod repo."
     )
     parser.add_argument(
         "--course-id",
         type=int,
-        help="Canvas course ID (optional if you hard-code or use env in make_canvas_api_obj).",
+        help="Canvas course ID (optional if COURSE_ID env is set).",
+    )
+    # For compatibility with watcher; no extra logic needed here.
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="Ignored marker flag when called from watch_and_publish.py.",
     )
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Actually delete extra items on Canvas. Without this, runs in dry-run mode.",
+        help="Actually delete extra items on Canvas and module items. Without this, dry-run only.",
     )
     parser.add_argument(
-        "--include-assignments",
+        "--prune-assignments",
         action="store_true",
-        help="Also prune assignments (not just pages).",
+        help="Include assignments in content pruning (default is pages only).",
     )
     args = parser.parse_args()
 
-    # Connect to Canvas via markdown2canvas helper (uses CANVAS_CREDENTIAL_FILE env).[file:11]
+    # Connect to Canvas via markdown2canvas helper
     canvas = make_canvas_api_obj()
 
     if args.course_id:
         course_id = args.course_id
     else:
-        # If you normally use an env var COURSEID elsewhere, you can mirror that here:
-        import os
-        env_course = os.environ.get("COURSEID")
+        env_course = os.environ.get("COURSE_ID")
         if not env_course:
-            raise SystemExit("COURSEID not set and --course-id not provided.")
+            raise SystemExit("COURSE_ID not set and --course-id not provided.")
         course_id = int(env_course)
 
     course = canvas.get_course(course_id)
-    print(f"Pruning against course: {course.name} (ID {course_id})")
+    print(f"[prune] Pruning against course: {course.name} (ID {course_id})")
 
+    # 1) Content-level pruning (pages and optionally assignments)
     local_page_names, local_assignment_names = load_local_names()
     canvas_page_names, canvas_assignment_names = load_canvas_sets(course)
 
@@ -155,14 +365,38 @@ def main():
 
     delete_extra_pages(course, extra_pages, apply=args.apply)
 
-    if args.include_assignments:
+    if args.prune_assignments:
         delete_extra_assignments(course, extra_assignments, apply=args.apply)
     else:
         if extra_assignments:
             print(
-                "\nAssignments with no local counterpart exist, "
-                "but --include-assignments was not set, so they were not deleted."
+                "\n[prune] Assignments with no local counterpart exist, "
+                "but --prune-assignments was not set, so they were not deleted."
             )
+
+    # 2) Module-item pruning based on current meta.json mappings
+    (
+        page_modules_by_title,
+        assignment_modules_by_name,
+        file_modules_by_filename,
+        link_modules_by_url,
+    ) = load_local_meta_maps()
+
+    prune_module_items(
+        course,
+        page_modules_by_title,
+        assignment_modules_by_name,
+        file_modules_by_filename,
+        link_modules_by_url,
+        apply=args.apply,
+    )
+
+    # 3) Remove empty modules
+    delete_empty_modules(course, apply=args.apply)
+
+    # 4) Remove auto-generated work files from the repo
+    cleanup_work_files()
+
 
 
 if __name__ == "__main__":
