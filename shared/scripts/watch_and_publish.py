@@ -11,6 +11,7 @@ watch_and_publish.py (Zaphod)
     4) sync_clo_via_csv.py   (manage CLOs via Outcomes CSV import)
     5) sync_rubrics.py
     6) sync_quiz_banks.py
+    7) (optional) prune_canvas_content.py
 
 Assumptions:
 - You run this from a course root, e.g. ~/courses/test
@@ -18,6 +19,9 @@ Assumptions:
 - Env:
     CANVAS_CREDENTIAL_FILE
     COURSE_ID
+    ZAPHOD_PRUNE              (optional, truthy to enable prune step)
+    ZAPHOD_PRUNE_APPLY        (optional, truthy to actually delete)
+    ZAPHOD_PRUNE_ASSIGNMENTS  (optional, truthy to include assignments)
 """
 
 from __future__ import annotations
@@ -25,12 +29,12 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from datetime import datetime  # [web:1]
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from watchdog.events import PatternMatchingEventHandler  # [web:15]
-from watchdog.observers import Observer  # [web:39]
+from watchdog.events import PatternMatchingEventHandler
+from watchdog.observers import Observer
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SHARED_ROOT = SCRIPT_DIR.parent
@@ -40,11 +44,18 @@ PAGES_DIR = COURSE_ROOT / "pages"
 
 DOT_LINE = "." * 70  # ~70-column visual separator
 
+
 def fence(label: str):
-    ts = datetime.now().strftime("%H:%M:%S")  # [web:1]
+    ts = datetime.now().strftime("%H:%M:%S")
     print(DOT_LINE)
     print(f"[{ts}] {label}")
     print("\n")  # blank line after each phase
+
+
+def _truthy_env(name: str) -> bool:
+    v = os.environ.get(name, "")
+    return v.lower() in {"1", "true", "yes", "on"}
+
 
 def run_pipeline():
     """
@@ -77,9 +88,36 @@ def run_pipeline():
             [str(python_exe), str(script)],
             cwd=str(COURSE_ROOT),
             env=env,
-            check=False,  # do not kill watcher on error [web:10]
+            check=False,  # do not kill watcher on error
         )
+
+    # Optional prune step at the end (shared script)
+    prune_enabled = _truthy_env("ZAPHOD_PRUNE")
+    prune_apply = _truthy_env("ZAPHOD_PRUNE_APPLY")
+    prune_assignments = _truthy_env("ZAPHOD_PRUNE_ASSIGNMENTS")
+
+    prune_script = SHARED_ROOT / "scripts" / "prune_canvas_content.py"
+
+    if prune_enabled:
+        if prune_script.is_file():
+            args = [str(python_exe), str(prune_script), "--prune"]
+            if prune_assignments:
+                args.append("--prune-assignments")
+            if prune_apply:
+                args.append("--apply")
+
+            fence(f"RUNNING: {prune_script.name}")
+            subprocess.run(
+                args,
+                cwd=str(COURSE_ROOT),
+                env=env,
+                check=False,
+            )
+        else:
+            print(f"[watch] WARN: ZAPHOD_PRUNE=1 but {prune_script} not found")
+
     fence("Zaphod pipeline complete")
+
 
 class MarkdownChangeHandler(PatternMatchingEventHandler):
     def __init__(self):
@@ -105,6 +143,7 @@ class MarkdownChangeHandler(PatternMatchingEventHandler):
         run_pipeline()
         print("[watch] PIPELINE COMPLETE\n")
 
+
 def main():
     if not PAGES_DIR.is_dir():
         raise SystemExit(f"pages/ directory not found under {COURSE_ROOT}")
@@ -125,6 +164,7 @@ def main():
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
+
 
 if __name__ == "__main__":
     main()

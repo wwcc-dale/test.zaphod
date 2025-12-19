@@ -20,7 +20,7 @@ Working from flat files gives you version control, automation, and consistency t
 #### Automation and consistency
 
 - Scripts can enforce consistent metadata (naming, modules, outcomes, topics) and generate pages, outcomes, rubrics, and quizzes in one pass, reducing manual clicking and error risk.
-- Global changes (e.g., institution‑wide footers, updated links, replacements variable like `==course-name== ==course-code==`) can be applied across the course(s) by editing one style or replacements file.
+- Global changes (e.g., institution‑wide footers, updated links, replacements variable like `{{course-name}} {{course-code}}`) can be applied across the course(s) by editing one style or replacements file.
 
 #### Portability and longevity
 
@@ -205,12 +205,12 @@ published: true
 ---
 ```
 
-#### 3.3 _replacements and `==mykey==` tokens
+#### 3.3 _replacements and `{{mykey}}` tokens
 A simple replacement system lets you define common plain text elements or HTML snippets once, then reuse them everywhere. It can help authors to avoid repetitive editing and can update the element across an entire course just by changing a single definition.
 
 When Zaphod process a page or assignment, it looks for a course-level default replacement file or one overridden specified in the page's frontmatter level
 
-During translation, Zaphod replaces any `==course_code==`‑style tokens in rendered HTML using this mapping, as configured by `replacements_path`.
+During translation, Zaphod replaces any `{{course_code}}`‑style tokens in rendered HTML using this mapping, as configured by `replacements_path`.
 
 ```text
 _course_metadata/
@@ -222,8 +222,8 @@ Example `default.json`:
 
 ```json
 {
-  "==course_code==": "COURSE-101",
-  "==support_email==": "support@example.edu"
+  "{{course_code}}": "COURSE-101",
+  "{{support_email}}": "support@example.edu"
 }
 ```
 
@@ -470,7 +470,7 @@ def ensure_module(course, name: str):
 
 def module_has_page(module, page_url: str):
     for item in module.get_module_items():
-        if item.type == "Page" and getattr(item, "page_url", None) == page_url:
+        if item.type {{ "Page" and getattr(item, "page_url", None) }} page_url:
             return True
     return False
 
