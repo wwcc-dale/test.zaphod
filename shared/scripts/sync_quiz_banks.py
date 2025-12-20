@@ -101,17 +101,10 @@ def create_quiz(course, title: str, meta: Dict[str, Any]):
 
 
 def add_question(course_id: int, quiz, question_payload: Dict[str, Any], canvas: Canvas):
-    """
-    Add a single question to a Classic Quiz via Quiz Questions API. [web:382][web:371]
-    """
-    path = f"courses/{course_id}/quizzes/{quiz.id}/questions"
-    resp = canvas._Canvas__requester.request(
-        "POST",
-        f"/api/v1/{path}",
-        _kwargs={"question": question_payload},
-    )
+    resp = quiz.create_question(question=question_payload)  # uses POST /questions under the hood [web:35]
     print(f"[quiz:q] added {question_payload.get('question_type')}: {question_payload.get('question_name')}")
     return resp
+
 
 
 # ---------- Frontmatter handling ----------
