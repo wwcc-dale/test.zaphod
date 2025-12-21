@@ -1,0 +1,36 @@
+---
+title: "Testy McQuizster"
+points_per_question: 2
+shuffle_answers: true
+published: false
+outcomes: ["WRIT-THESIS-1"]
+---
+
+1. What is 2+3?
+a) 6
+b) 1
+*c) 5
+d) 10
+
+1. Which of the following are dinosaurs?
+[ ] Woolly mammoth
+[*] Tyrannosaurus rex
+[*] Triceratops
+[ ] Smilodon fatalis
+
+1. Who lives at the North Pole?
+* Santa
+* Santa Claus
+* Father Christmas
+* Saint Nicholas
+* Saint Nick
+
+1. Write an essay.
+####
+
+1. Upload a file.
+^^^^
+
+1. Water is liquid.
+*a) True
+b) False

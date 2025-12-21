@@ -1055,7 +1055,7 @@ Questions are separated by blank lines; each starts with a numbered stem like `1
 
 #### 7.2 sync_quiz_banks.py (NYIT → Classic Quizzes)
 
-`shared/scripts/sync_quiz_banks.py` implements the quiz pipeline:[2]
+`zaphod/scripts/sync_quiz_banks.py` implements the quiz pipeline:[2]
 
 - Scans `quiz-banks/` for `*.quiz.txt` files in the current course.[2]
 - Splits each file into YAML frontmatter and body:
@@ -1657,7 +1657,7 @@ This keeps authoring simple: course pages and assignments are updated automatica
 Planned extensions:
 
 1. **Institution and Program Level Outcomes (ILO/PLO)**  
-   - Add shared outcome stores (e.g. `_institution/outcomes.yaml`, `_programs/<program>/outcomes.yaml`) that Zaphod courses can reference and reuse.  
+   - Add zaphod outcome stores (e.g. `_institution/outcomes.yaml`, `_programs/<program>/outcomes.yaml`) that Zaphod courses can reference and reuse.  
    - Support hierarchical relationships between ILOs, PLOs, CLOs, and rubric rows.
 
 2. **Course‑Level Topics and Tagging**  

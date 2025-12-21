@@ -1,10 +1,5 @@
----
-name: "Bangers & Mashie"
-type: "Page"
-modules:
-  - "Credit 2"
-published: true
----
+
+#### peek a boo!
 
 # Bangers & Mashie
 
@@ -14,3 +9,5 @@ This content lives in `/home/chapman/courses/test/pages/intro.page` and is synce
 
 - Author pages in Markdown.
 - Publish to Canvas via `markdown2canvas`.
+
+&copy; 2025 : Built with  Zaphod

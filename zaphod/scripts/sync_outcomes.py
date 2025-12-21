@@ -27,8 +27,8 @@ from canvasapi import Canvas  # [web:282][web:431]
 
 
 # Shared layout paths
-SCRIPT_DIR = Path(__file__).resolve().parent          # .../courses/shared/scripts
-SHARED_ROOT = SCRIPT_DIR.parent                       # .../courses/shared
+SCRIPT_DIR = Path(__file__).resolve().parent          # .../courses/zaphod/scripts
+SHARED_ROOT = SCRIPT_DIR.parent                       # .../courses/zaphod
 COURSES_ROOT = SHARED_ROOT.parent                     # .../courses
 COURSE_ROOT = Path.cwd()                              # current course
 COURSE_META_DIR = COURSE_ROOT / "_course_metadata"

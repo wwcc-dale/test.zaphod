@@ -1,0 +1,18 @@
+{
+  "name": "Take out the papers and the trash",
+  "type": "Assignment",
+  "modules": [
+    "Credit 3"
+  ],
+  "published": true,
+  "points_possible": 31,
+  "submission_types": [
+    "online_upload"
+  ],
+  "allowed_extensions": [
+    "pdf",
+    "docx"
+  ],
+  "peer_reviews": false,
+  "group_category": null
+}

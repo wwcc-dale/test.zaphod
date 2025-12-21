@@ -46,8 +46,8 @@ from canvasapi import Canvas  # [web:379][web:392]
 
 
 # Shared layout paths
-SCRIPT_DIR = Path(__file__).resolve().parent          # .../courses/shared/scripts
-SHARED_ROOT = SCRIPT_DIR.parent                       # .../courses/shared
+SCRIPT_DIR = Path(__file__).resolve().parent          # .../courses/zaphod/scripts
+SHARED_ROOT = SCRIPT_DIR.parent                       # .../courses/zaphod
 COURSES_ROOT = SHARED_ROOT.parent                     # .../courses
 COURSE_ROOT = Path.cwd()                              # current course, e.g. .../courses/test
 QUIZ_BANKS_DIR = COURSE_ROOT / "quiz-banks"
@@ -324,7 +324,7 @@ def to_canvas_question_payload(pq: ParsedQuestion) -> Dict[str, Any]:
                 }
             )
         return {
-            "question_name": f"Q{pq.number}",
+            "question_name": f"{pq.stem}",
             "question_text": qtext_html,
             "question_type": "multiple_choice_question",
             "points_possible": pq.points,
@@ -345,7 +345,7 @@ def to_canvas_question_payload(pq: ParsedQuestion) -> Dict[str, Any]:
                 }
             )
         return {
-            "question_name": f"Q{pq.number}",
+            "question_name": f"{pq.stem}",
             "question_text": qtext_html,
             "question_type": "multiple_answers_question",
             "points_possible": pq.points,
@@ -363,7 +363,7 @@ def to_canvas_question_payload(pq: ParsedQuestion) -> Dict[str, Any]:
                 }
             )
         return {
-            "question_name": f"Q{pq.number}",
+            "question_name": f"{pq.stem}",
             "question_text": qtext_html,
             "question_type": "short_answer_question",
             "points_possible": pq.points,
@@ -372,7 +372,7 @@ def to_canvas_question_payload(pq: ParsedQuestion) -> Dict[str, Any]:
 
     if pq.qtype == "essay":
         return {
-            "question_name": f"Q{pq.number}",
+            "question_name": f"{pq.stem}",
             "question_text": qtext_html,
             "question_type": "essay_question",
             "points_possible": pq.points,
@@ -380,7 +380,7 @@ def to_canvas_question_payload(pq: ParsedQuestion) -> Dict[str, Any]:
 
     if pq.qtype == "file_upload":
         return {
-            "question_name": f"Q{pq.number}",
+            "question_name": f"{pq.stem}",
             "question_text": qtext_html,
             "question_type": "file_upload_question",
             "points_possible": pq.points,
@@ -397,7 +397,7 @@ def to_canvas_question_payload(pq: ParsedQuestion) -> Dict[str, Any]:
                 }
             )
         return {
-            "question_name": f"Q{pq.number}",
+            "question_name": f"{pq.stem}",
             "question_text": qtext_html,
             "question_type": "true_false_question",
             "points_possible": pq.points,

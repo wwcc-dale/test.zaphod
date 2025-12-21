@@ -2,20 +2,21 @@
 """
 watch_and_publish.py (Zaphod)
 
+
 - Watches pages/**/index.md in the current course for changes.
 - On any change, runs the full pipeline for that course:
 
     1) frontmatter_to_meta.py
     2) publish_all.py
     3) sync_modules.py
-    4) sync_clo_via_csv.py   (manage CLOs via Outcomes CSV import)
+    4) sync_clo_via_csv.py
     5) sync_rubrics.py
     6) sync_quiz_banks.py
     7) (optional) prune_canvas_content.py
 
 Assumptions:
 - You run this from a course root, e.g. ~/courses/test
-- Shared layout: ~/courses/shared/.venv and ~/courses/shared/scripts
+- Shared layout: ~/courses/zaphod/.venv and ~/courses/zaphod/scripts
 - Env:
     CANVAS_CREDENTIAL_FILE
     COURSE_ID
@@ -31,7 +32,7 @@ import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import Optional, List
 
 from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers import Observer
@@ -43,6 +44,9 @@ COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
 
 DOT_LINE = "." * 70  # ~70-column visual separator
+
+# Debounce window (seconds) for the whole pipeline
+DEBOUNCE_SECONDS = 2.0
 
 
 def fence(label: str):
@@ -91,7 +95,7 @@ def run_pipeline():
             check=False,  # do not kill watcher on error
         )
 
-    # Optional prune step at the end (shared script)
+    # Optional prune step at the end (zaphod script)
     prune_enabled = _truthy_env("ZAPHOD_PRUNE")
     prune_apply = _truthy_env("ZAPHOD_PRUNE_APPLY")
     prune_assignments = _truthy_env("ZAPHOD_PRUNE_ASSIGNMENTS")
@@ -118,6 +122,7 @@ def run_pipeline():
 
     fence("Zaphod pipeline complete")
 
+import threading
 
 class MarkdownChangeHandler(PatternMatchingEventHandler):
     def __init__(self):
@@ -127,21 +132,40 @@ class MarkdownChangeHandler(PatternMatchingEventHandler):
                 "*/*/index.md",
                 "*/*/*/index.md",
                 "outcomes.yaml",
+                "*.quiz.txt",
             ],
             ignore_directories=False,
             case_sensitive=False,
         )
+        self._lock = threading.Lock()
+        self._timer: Optional[threading.Timer] = None
+        self._pending_log: bool = True
 
-    def on_any_event(self, event):
-        # Debounce noisy events by only reacting to file changes/creations.
-        if event.is_directory:
-            return
-        if event.event_type not in {"modified", "created"}:
-            return
-
-        print(f"[watch] CHANGE DETECTED: {event.src_path}")
+    def _debounced_run(self):
+        print("[watch] DEBOUNCED RUN: starting pipeline")
         run_pipeline()
         print("[watch] PIPELINE COMPLETE\n")
+        with self._lock:
+            # Next burst should log again
+            self._pending_log = True
+
+    def _schedule_pipeline(self, src_path: str):
+        with self._lock:
+            if self._pending_log:
+                print(f"[watch] CHANGE DETECTED: {src_path}")
+                self._pending_log = False
+            if self._timer is not None:
+                self._timer.cancel()
+            self._timer = threading.Timer(DEBOUNCE_SECONDS, self._debounced_run)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def on_any_event(self, event):
+        if event.is_directory:
+            return
+        if event.event_type != "modified":
+            return
+        self._schedule_pipeline(str(event.src_path))
 
 
 def main():

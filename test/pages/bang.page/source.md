@@ -1,11 +1,3 @@
----
-name: "Bangers & Mashie"
-type: "Page"
-modules:
-  - "Credit 2"
-published: true
----
-
 # Bangers & Mashie
 
 This content lives in `/home/chapman/courses/test/pages/intro.page` and is synced to Canvas.

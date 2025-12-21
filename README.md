@@ -371,7 +371,7 @@ Each quiz is defined in one `quiz-banks/*.quiz.txt` file. The file supports opti
 Questions are separated by blank lines; each starts with a numbered stem like `1. Question text`.
 
 
-`shared/scripts/sync_quiz_banks.py` implements the quiz pipeline:
+`zaphod/scripts/sync_quiz_banks.py` implements the quiz pipeline:
 
 - Scans `quiz-banks/` for `*.quiz.txt` files in the current course.
 - Splits each file into YAML frontmatter and body:
@@ -421,7 +421,7 @@ Monitors the current course for file changes and automatically runs the full Zap
 ## 9. Zaphod Feature Roadmap
 
 1. **Institution and Program Level Outcomes (ILO/PLO)**  
-   - Add shared outcome stores (e.g. `_institution/outcomes.yaml`, `_programs/<program>/outcomes.yaml`) that Zaphod courses can reference and reuse.  
+   - Add zaphod outcome stores (e.g. `_institution/outcomes.yaml`, `_programs/<program>/outcomes.yaml`) that Zaphod courses can reference and reuse.  
    - Support hierarchical relationships between ILOs, PLOs, CLOs, and rubric rows.
 
 2. **Course‑Level Topics and Tagging**  
