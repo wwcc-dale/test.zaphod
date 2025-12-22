@@ -1,8 +1,8 @@
 ---
-name: "Dee Plane!"
+name: "Page Three"
 type: "Page"
 modules:
-  - "Credit 2"
+  - "Credit 3"
 published: true
 ---
 

@@ -15,7 +15,7 @@ For the *current* course (cwd):
     outcomes: ["ILO-COMM-1"]
     ---
 
-- Body uses NYIT Canvas Exam Converter-style text format: [file:1][web:359]
+- Body uses NYIT Canvas Exam Converter-style text format:
     * Multiple choice: a) / *c) for correct
     * Multiple answers: [ ] / [*]
     * Short answer: * answer
@@ -23,14 +23,14 @@ For the *current* course (cwd):
     * File-upload: ^^^^
     * True/False: *a) True / b) False
 
-- Creates a Classic Quiz per file via /courses/:course_id/quizzes [web:392]
-- Adds each parsed question via Quiz Questions API /quizzes/:quiz_id/questions [web:382][web:371]
+- Creates a Classic Quiz per file via /courses/:course_id/quizzes
+- Adds each parsed question via Quiz Questions API.
 
-Assumptions:
-- Env:
-    CANVAS_CREDENTIAL_FILE=/home/chapman/.canvas/credentials.txt
-    COURSE_ID=<canvas course id>
-- Run from the course root, e.g. /home/chapman/courses/test
+Incremental behavior:
+- If ZAPHOD_CHANGED_FILES is set, only *.quiz.txt files listed there
+  (under quiz-banks/) are processed.
+- If ZAPHOD_CHANGED_FILES is unset/empty, all *.quiz.txt files are processed
+  (existing full behavior).
 """
 
 from __future__ import annotations
@@ -42,8 +42,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 
 import yaml  # pip install pyyaml
-from canvasapi import Canvas  # [web:379][web:392]
-
+from canvasapi import Canvas
 
 # Shared layout paths
 SCRIPT_DIR = Path(__file__).resolve().parent          # .../courses/zaphod/scripts
@@ -72,12 +71,12 @@ def load_canvas() -> Canvas:
     except KeyError as e:
         raise SystemExit(f"Credentials file must define API_KEY and API_URL. Missing: {e}")
 
-    return Canvas(api_url, api_key)  # [web:379]
+    return Canvas(api_url, api_key)
 
 
 def create_quiz(course, title: str, meta: Dict[str, Any]):
     """
-    Create a Classic Quiz using metadata + sensible defaults. [web:392][web:410]
+    Create a Classic Quiz using metadata + sensible defaults.
     """
     description = meta.get("description", "")
     quiz_type = meta.get("quiz_type", "assignment")  # graded quiz
@@ -95,16 +94,15 @@ def create_quiz(course, title: str, meta: Dict[str, Any]):
     if time_limit is not None:
         quiz_params["time_limit"] = int(time_limit)
 
-    quiz = course.create_quiz(quiz=quiz_params)  # [web:392][web:410]
+    quiz = course.create_quiz(quiz=quiz_params)
     print(f"[quiz] Created quiz '{quiz.title}' (id={quiz.id})")
     return quiz
 
 
 def add_question(course_id: int, quiz, question_payload: Dict[str, Any], canvas: Canvas):
-    resp = quiz.create_question(question=question_payload)  # uses POST /questions under the hood [web:35]
+    resp = quiz.create_question(question=question_payload)
     print(f"[quiz:q] added {question_payload.get('question_type')}: {question_payload.get('question_name')}")
     return resp
-
 
 
 # ---------- Frontmatter handling ----------
@@ -112,7 +110,7 @@ def add_question(course_id: int, quiz, question_payload: Dict[str, Any], canvas:
 def split_frontmatter_and_body(raw: str) -> Tuple[Dict[str, Any], str]:
     """
     If file starts with YAML frontmatter (--- ... ---), parse it.
-    Otherwise return empty meta and whole text as body. [web:397][web:400][web:406]
+    Otherwise return empty meta and whole text as body.
     """
     lines = raw.splitlines()
     if not lines or not lines[0].strip().startswith("---"):
@@ -165,7 +163,7 @@ TF_FALSE_RE = re.compile(r"^\s*\*b\)\s*False\s*$", re.IGNORECASE)
 
 def split_questions(raw: str) -> List[List[str]]:
     """
-    Split quiz text into question blocks, separated by blank line(s). [file:1][web:359]
+    Split quiz text into question blocks, separated by blank line(s).
     """
     lines = raw.splitlines()
     blocks: List[List[str]] = []
@@ -407,13 +405,48 @@ def to_canvas_question_payload(pq: ParsedQuestion) -> Dict[str, Any]:
     raise ValueError(f"Unsupported question type for payload: {pq.qtype}")
 
 
-# ---------- Main workflow ----------
+# ---------- Incremental helpers ----------
 
-def iter_quiz_files() -> List[Path]:
+def get_changed_files() -> List[Path]:
+    raw = os.environ.get("ZAPHOD_CHANGED_FILES", "").strip()
+    if not raw:
+        return []
+    return [Path(p) for p in raw.splitlines() if p.strip()]
+
+
+def iter_quiz_files_full() -> List[Path]:
     if not QUIZ_BANKS_DIR.exists():
         return []
     return sorted(QUIZ_BANKS_DIR.glob("*.quiz.txt"))
 
+
+def iter_quiz_files_incremental(changed_files: List[Path]) -> List[Path]:
+    """
+    From the changed files list, return the *.quiz.txt files under quiz-banks/
+    that should be processed.
+    """
+    result: List[Path] = []
+    seen: set[Path] = set()
+
+    for p in changed_files:
+        if p.suffix != ".txt" or not str(p).endswith(".quiz.txt"):
+            continue
+        try:
+            rel = p.relative_to(COURSE_ROOT)
+        except ValueError:
+            continue
+        if not rel.parts or rel.parts[0] != "quiz-banks":
+            continue
+        # Normalize to the actual path on disk (in case of case differences)
+        path = QUIZ_BANKS_DIR / rel.name if rel.parent == Path("quiz-banks") else COURSE_ROOT / rel
+        if path.is_file() and path not in seen:
+            seen.add(path)
+            result.append(path)
+
+    return sorted(result)
+
+
+# ---------- Main workflow ----------
 
 def process_quiz_file(course, canvas: Canvas, path: Path, course_id: int):
     print(f"[quiz:file] {path.name}")
@@ -442,12 +475,19 @@ def main():
 
     course_id_int = int(course_id)
     canvas = load_canvas()
-    course = canvas.get_course(course_id_int)  # [web:392]
+    course = canvas.get_course(course_id_int)
 
-    quiz_files = iter_quiz_files()
-    if not quiz_files:
-        print(f"[quiz] No *.quiz.txt files under {QUIZ_BANKS_DIR}")
-        return
+    changed_files = get_changed_files()
+    if changed_files:
+        quiz_files = iter_quiz_files_incremental(changed_files)
+        if not quiz_files:
+            print(f"[quiz] No changed *.quiz.txt files under {QUIZ_BANKS_DIR}; nothing to do.")
+            return
+    else:
+        quiz_files = iter_quiz_files_full()
+        if not quiz_files:
+            print(f"[quiz] No *.quiz.txt files under {QUIZ_BANKS_DIR}")
+            return
 
     for path in quiz_files:
         process_quiz_file(course, canvas, path, course_id_int)

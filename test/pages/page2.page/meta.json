@@ -1,8 +1,9 @@
 {
-  "name": "Dee Plane!",
+  "name": "Page Two",
   "type": "Page",
   "modules": [
-    "Credit 2"
+    "Credit 2",
+    "Credit 5"
   ],
   "published": true
 }

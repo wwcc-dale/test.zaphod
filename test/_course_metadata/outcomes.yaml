@@ -2,10 +2,10 @@ institution_outcomes: []
 program_outcomes: []
 
 course_outcomes:
-  - code: "WRIT-THESIS-1"
-    title: "Snoring for success"
+  - code: "WRIT-THESIS-5"
+    title: "Blardy Bluhar"
     description: "Student articulates a focused, arguable thesis."
-    vendor_guid: "WRIT-THESIS-1"
+    vendor_guid: "WRIT-THESIS-5"
     mastery_points: 3
     ratings:
       - description: "Exceeds expectations"

@@ -1,8 +1,8 @@
 ---
-name: "Take out the papers and the trash"
+name: "Assignment One"
 type: "Assignment"
 modules:
-  - "Credit 3"
+  - "Credit 4"
 published: true
 
 # assignment settings

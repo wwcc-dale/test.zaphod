@@ -1,12 +1,13 @@
 ---
-name: "Bangers & Mashie"
+name: "Page Two"
 type: "Page"
 modules:
   - "Credit 2"
+  - "Credit 5"
 published: true
 ---
 
-# Bangers & Mashie
+# Boom shakalaka
 
 This content lives in `/home/chapman/courses/test/pages/intro.page` and is synced to Canvas.
 

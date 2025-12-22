@@ -2,17 +2,9 @@
 """
 watch_and_publish.py (Zaphod)
 
-
 - Watches pages/**/index.md in the current course for changes.
-- On any change, runs the full pipeline for that course:
-
-    1) frontmatter_to_meta.py
-    2) publish_all.py
-    3) sync_modules.py
-    4) sync_clo_via_csv.py
-    5) sync_rubrics.py
-    6) sync_quiz_banks.py
-    7) (optional) prune_canvas_content.py
+- On any change, runs the pipeline for only the files that have changed
+  since the last run (as far as the downstream scripts support that).
 
 Assumptions:
 - You run this from a course root, e.g. ~/courses/test
@@ -27,15 +19,17 @@ Assumptions:
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers import Observer
+import threading
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SHARED_ROOT = SCRIPT_DIR.parent
@@ -43,10 +37,15 @@ COURSES_ROOT = SHARED_ROOT.parent
 COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
 
+STATE_FILE = COURSE_ROOT / ".zaphod_watch_state.json"
+
 DOT_LINE = "." * 70  # ~70-column visual separator
 
 # Debounce window (seconds) for the whole pipeline
 DEBOUNCE_SECONDS = 2.0
+
+# Prevent overlapping runs
+PIPELINE_RUNNING = False
 
 
 def fence(label: str):
@@ -61,48 +60,119 @@ def _truthy_env(name: str) -> bool:
     return v.lower() in {"1", "true", "yes", "on"}
 
 
-def run_pipeline():
-    """
-    Run the Zaphod pipeline for the current course.
-    """
-    python_exe = SHARED_ROOT / ".venv" / "bin" / "python"
+# ---------- incremental state helpers ----------
 
-    env = os.environ.copy()
-    env.setdefault(
-        "CANVAS_CREDENTIAL_FILE",
-        str(Path.home() / ".canvas" / "credentials.txt"),
-    )
+def load_state() -> dict:
+    if not STATE_FILE.is_file():
+        return {}
+    try:
+        return json.loads(STATE_FILE.read_text())
+    except Exception:
+        return {}
 
-    steps: List[Path] = [
-        SCRIPT_DIR / "frontmatter_to_meta.py",
-        SCRIPT_DIR / "publish_all.py",
-        SCRIPT_DIR / "sync_modules.py",
-        SCRIPT_DIR / "sync_clo_via_csv.py",
-        SCRIPT_DIR / "sync_rubrics.py",
-        SCRIPT_DIR / "sync_quiz_banks.py",
-    ]
 
-    fence("Zaphod pipeline start")
-    for script in steps:
-        if not script.is_file():
-            print(f"[watch] SKIP missing script: {script}")
+def save_state(state: dict) -> None:
+    STATE_FILE.write_text(json.dumps(state, indent=2))
+
+
+def get_last_run_time() -> float:
+    state = load_state()
+    return float(state.get("last_run_ts", 0.0))
+
+
+def set_last_run_time(ts: float) -> None:
+    state = load_state()
+    state["last_run_ts"] = ts
+    save_state(state)
+
+
+def get_changed_files_since(last_ts: float) -> list[Path]:
+    changed: list[Path] = []
+
+    module_order_path = COURSE_ROOT / "_course_metadata" / "module_order.yaml"
+
+    for path in COURSE_ROOT.rglob("*"):
+        if not path.is_file():
             continue
-        fence(f"RUNNING: {script.name}")
-        subprocess.run(
-            [str(python_exe), str(script)],
-            cwd=str(COURSE_ROOT),
-            env=env,
-            check=False,  # do not kill watcher on error
+
+        name = path.name
+        if (
+            name == "index.md"
+            or name == "outcomes.yaml"
+            or name.endswith(".quiz.txt")
+            or path == module_order_path
+        ):
+            mtime = path.stat().st_mtime
+            if mtime > last_ts:
+                changed.append(path)
+
+    return changed
+
+
+# ---------- pipeline ----------
+
+def run_pipeline(changed_files: list[Path]):
+    """
+    Run the Zaphod pipeline for the current course, restricted to changed_files.
+
+    Downstream scripts learn about changed_files via the
+    ZAPHOD_CHANGED_FILES environment variable (newline-separated paths).
+    """
+    global PIPELINE_RUNNING
+    if PIPELINE_RUNNING:
+        print("[watch] PIPELINE already running, skipping this run")
+        return
+
+    PIPELINE_RUNNING = True
+    try:
+        python_exe = SHARED_ROOT / ".venv" / "bin" / "python"
+
+        env = os.environ.copy()
+        env.setdefault(
+            "CANVAS_CREDENTIAL_FILE",
+            str(Path.home() / ".canvas" / "credentials.txt"),
         )
 
-    # Optional prune step at the end (zaphod script)
-    prune_enabled = _truthy_env("ZAPHOD_PRUNE")
-    prune_apply = _truthy_env("ZAPHOD_PRUNE_APPLY")
-    prune_assignments = _truthy_env("ZAPHOD_PRUNE_ASSIGNMENTS")
+        # Export changed file list to children as an env var.
+        env["ZAPHOD_CHANGED_FILES"] = "\n".join(str(p) for p in changed_files)
 
-    prune_script = SHARED_ROOT / "scripts" / "prune_canvas_content.py"
+        steps: List[Path] = [
+            SCRIPT_DIR / "frontmatter_to_meta.py",
+            SCRIPT_DIR / "publish_all.py",
+            SCRIPT_DIR / "sync_modules.py",
+            SCRIPT_DIR / "sync_clo_via_csv.py",
+            SCRIPT_DIR / "sync_rubrics.py",
+            SCRIPT_DIR / "sync_quiz_banks.py",
+        ]
 
-    if prune_enabled:
+        fence("Zaphod pipeline start")
+        print("[watch] processing changed files:")
+        for p in changed_files:
+            try:
+                rel = p.relative_to(COURSE_ROOT)
+            except ValueError:
+                rel = p
+            print(f"  - {rel}")
+        print()
+
+        for script in steps:
+            if not script.is_file():
+                print(f"[watch] SKIP missing script: {script}")
+                continue
+            fence(f"RUNNING: {script.name}")
+            subprocess.run(
+                [str(python_exe), str(script)],
+                cwd=str(COURSE_ROOT),
+                env=env,
+                check=False,  # do not kill watcher on error
+            )
+
+        # Optional prune step at the end (zaphod script)
+        prune_apply = _truthy_env("ZAPHOD_PRUNE_APPLY")
+        prune_assignments = _truthy_env("ZAPHOD_PRUNE_ASSIGNMENTS")
+
+        prune_script = SHARED_ROOT / "scripts" / "prune_canvas_content.py"
+
         if prune_script.is_file():
             args = [str(python_exe), str(prune_script), "--prune"]
             if prune_assignments:
@@ -118,11 +188,26 @@ def run_pipeline():
                 check=False,
             )
         else:
-            print(f"[watch] WARN: ZAPHOD_PRUNE=1 but {prune_script} not found")
+            print(f"[watch] WARN: prune script not found at {prune_script}")
 
-    fence("Zaphod pipeline complete")
+        quiz_prune_script = SHARED_ROOT / "scripts" / "prune_quizzes.py"
+        if quiz_prune_script.is_file():
+            fence(f"RUNNING: {quiz_prune_script.name}")
+            subprocess.run(
+                [str(python_exe), str(quiz_prune_script)],
+                cwd=str(COURSE_ROOT),
+                env=env,
+                check=False,
+            )
+        else:
+            print(f"[watch] WARN: quiz prune script not found at {quiz_prune_script}")
 
-import threading
+        fence("Zaphod pipeline complete")
+    finally:
+        PIPELINE_RUNNING = False
+
+
+# ---------- watchdog handler ----------
 
 class MarkdownChangeHandler(PatternMatchingEventHandler):
     def __init__(self):
@@ -132,6 +217,7 @@ class MarkdownChangeHandler(PatternMatchingEventHandler):
                 "*/*/index.md",
                 "*/*/*/index.md",
                 "outcomes.yaml",
+                "_course_metadata/module_order.yaml",
                 "*.quiz.txt",
             ],
             ignore_directories=False,
@@ -142,8 +228,19 @@ class MarkdownChangeHandler(PatternMatchingEventHandler):
         self._pending_log: bool = True
 
     def _debounced_run(self):
+        last_ts = get_last_run_time()
+        changed = get_changed_files_since(last_ts)
+
+        if not changed:
+            print("[watch] DEBOUNCED RUN: no files changed since last pipeline, skipping\n")
+            with self._lock:
+                self._pending_log = True
+            return
+
         print("[watch] DEBOUNCED RUN: starting pipeline")
-        run_pipeline()
+        run_pipeline(changed)
+        set_last_run_time(time.time())
+
         print("[watch] PIPELINE COMPLETE\n")
         with self._lock:
             # Next burst should log again
@@ -167,6 +264,8 @@ class MarkdownChangeHandler(PatternMatchingEventHandler):
             return
         self._schedule_pipeline(str(event.src_path))
 
+
+# ---------- main ----------
 
 def main():
     if not PAGES_DIR.is_dir():

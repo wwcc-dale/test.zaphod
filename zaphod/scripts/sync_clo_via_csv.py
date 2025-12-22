@@ -9,6 +9,10 @@ For the current course (cwd):
   including rating levels as separate CSV cells after the `ratings` header
   (points,description,points,description,...).
 - Imports that CSV into the course via Course.import_outcome().
+
+Incremental behavior:
+- If ZAPHOD_CHANGED_FILES is set, this script only runs when
+  _course_metadata/outcomes.yaml is among the changed paths.
 """
 
 from __future__ import annotations
@@ -19,8 +23,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 import yaml
-from canvasapi import Canvas  # [web:52]
-
+from canvasapi import Canvas  # [web:166][web:165]
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SHARED_ROOT = SCRIPT_DIR.parent
@@ -32,7 +35,6 @@ COURSE_OUTCOMES_CSV = COURSE_META_DIR / "outcomes_import.csv"
 
 
 # ---------- helpers ----------
-
 
 def load_canvas() -> Canvas:
     cred_path = os.environ.get("CANVAS_CREDENTIAL_FILE")
@@ -51,7 +53,7 @@ def load_canvas() -> Canvas:
     except KeyError as e:
         raise SystemExit(f"Credentials file must define API_KEY and API_URL. Missing: {e}")
 
-    return Canvas(api_url, api_key)  # [web:38][web:92]
+    return Canvas(api_url, api_key)  # [web:166]
 
 
 def load_course_outcomes_yaml() -> Dict[str, Any]:
@@ -164,10 +166,35 @@ def import_csv_to_course(canvas: Canvas, course_id: int):
     )
 
 
+def outcomes_yaml_changed() -> bool:
+    """
+    Return True if ZAPHOD_CHANGED_FILES is unset (full run) or
+    if _course_metadata/outcomes.yaml is listed among the changed paths.
+    """
+    raw = os.environ.get("ZAPHOD_CHANGED_FILES", "").strip()
+    if not raw:
+        # No incremental context: behave as full run.
+        return True
+
+    changed_paths = [Path(p) for p in raw.splitlines() if p.strip()]
+    for p in changed_paths:
+        try:
+            rel = p.relative_to(COURSE_ROOT)
+        except ValueError:
+            continue
+        if rel == COURSE_OUTCOMES_YAML.relative_to(COURSE_ROOT):
+            return True
+
+    return False
+
+
 # ---------- main ----------
 
-
 def main():
+    if not outcomes_yaml_changed():
+        print("[outcomes] outcomes.yaml not changed; skipping CLO sync.")
+        return
+
     course_id = os.environ.get("COURSE_ID")
     if not course_id:
         raise SystemExit("COURSE_ID is not set")
