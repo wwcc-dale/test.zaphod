@@ -88,7 +88,6 @@ def set_last_run_time(ts: float) -> None:
 
 def get_changed_files_since(last_ts: float) -> list[Path]:
     changed: list[Path] = []
-
     module_order_path = COURSE_ROOT / "_course_metadata" / "module_order.yaml"
 
     for path in COURSE_ROOT.rglob("*"):
@@ -101,6 +100,7 @@ def get_changed_files_since(last_ts: float) -> list[Path]:
             or name == "outcomes.yaml"
             or name.endswith(".quiz.txt")
             or path == module_order_path
+            or name in ("rubric.yaml", "rubric.yml", "rubric.json")
         ):
             mtime = path.stat().st_mtime
             if mtime > last_ts:
@@ -213,12 +213,13 @@ class MarkdownChangeHandler(PatternMatchingEventHandler):
     def __init__(self):
         super().__init__(
             patterns=[
-                "*/index.md",
-                "*/*/index.md",
-                "*/*/*/index.md",
+                "*/index.md",                    # pages/*/index.md
                 "outcomes.yaml",
                 "_course_metadata/module_order.yaml",
                 "*.quiz.txt",
+                "rubric.yaml",
+                "rubric.yml",
+                "rubric.json",
             ],
             ignore_directories=False,
             case_sensitive=False,

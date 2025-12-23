@@ -5,27 +5,25 @@ sync_rubrics.py
 For the current course (cwd):
 
 - Finds all .assignment folders under pages/
-- If rubric.yaml or .yml/.json exists in a folder, loads it
+- If rubric.yaml / rubric.yml / rubric.json exists in a folder, loads it (YAML/JSON)
 - Uses meta.json to identify the assignment in Canvas
-- Creates a rubric from a CSV via the Rubric Upload API
-- Attaches that rubric to the assignment using RubricAssociations
+- Creates a rubric via the Rubrics API from the YAML/JSON spec
+- Associates that rubric with the assignment using RubricAssociations semantics
 
 Assumptions
+- Run from course root (where pages/ lives).
 - Env:
     CANVAS_CREDENTIAL_FILE=$HOME/.canvas/credentials.txt
     COURSE_ID=canvas course id
-- Outcome mapping file:
-    coursemetadata/outcomemap.json with structure:
-      { "OUTCOME_CODE": outcome_id, ... }
+- Credentials file defines:
+    API_KEY = "..."
+    API_URL = "https://yourcanvas.institution.edu"
 """
 
 from __future__ import annotations
 
-import csv
-import io
 import json
 import os
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -38,12 +36,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SHARED_ROOT = SCRIPT_DIR.parent
 COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
-COURSE_META_DIR = COURSE_ROOT / "coursemetadata"
-OUTCOME_MAP_PATH = COURSE_META_DIR / "outcomemap.json"
 
 
 # ---------- Canvas helpers ----------
-
 
 def load_canvas() -> Canvas:
     cred_path = os.environ.get("CANVAS_CREDENTIAL_FILE")
@@ -64,25 +59,41 @@ def load_canvas() -> Canvas:
     return Canvas(api_url, api_key)
 
 
-def load_outcome_map() -> Dict[str, int]:
+def get_api_url_and_key() -> tuple[str, str]:
+    cred_path = os.environ.get("CANVAS_CREDENTIAL_FILE")
+    if not cred_path:
+        raise SystemExit("CANVAS_CREDENTIAL_FILE is not set")
+
+    cred_file = Path(cred_path)
+    if not cred_file.is_file():
+        raise SystemExit(f"CANVAS_CREDENTIAL_FILE does not exist: {cred_file}")
+
+    ns: Dict[str, Any] = {}
+    exec(cred_file.read_text(encoding="utf-8"), ns)
+    try:
+        api_key = ns["API_KEY"]
+        api_url = ns["API_URL"]
+    except KeyError as e:
+        raise SystemExit(f"Credentials file must define API_KEY and API_URL. Missing {e!r}")
+    return api_url.rstrip("/"), api_key
+
+
+# ---------- Local file helpers ----------
+
+def iter_assignment_folders_with_rubrics() -> List[Path]:
     """
-    Load mapping from outcome_code -> outcome_id created by a separate outcomes sync step.
+    Find all .assignment folders that contain a rubric file.
     """
-    if not OUTCOME_MAP_PATH.is_file():
-        print(f"[rubrics:warn] No outcomemap.json at {OUTCOME_MAP_PATH}; "
-              f"outcome-aligned rows will be skipped")
-        return {}
-
-    with OUTCOME_MAP_PATH.open(encoding="utf-8") as f:
-        data = json.load(f)
-
-    return {code: int(oid) for code, oid in data.items()}
-
-
-def iter_assignment_folders() -> List[Path]:
     if not PAGES_DIR.exists():
         return []
-    return list(PAGES_DIR.rglob("*.assignment"))
+
+    folders: List[Path] = []
+    for folder in PAGES_DIR.rglob("*.assignment"):
+        if not folder.is_dir():
+            continue
+        if find_rubric_file(folder) is not None:
+            folders.append(folder)
+    return folders
 
 
 def find_rubric_file(folder: Path) -> Optional[Path]:
@@ -118,249 +129,127 @@ def find_assignment_by_name(course: Course, name: str):
     return None
 
 
-# ---------- Rubric CSV rendering ----------
+# ---------- Rubric YAML/JSON loading ----------
 
-
-def build_rubric_csv(
-    rubric_spec: Dict[str, Any],
-    outcome_map: Dict[str, int],
-) -> bytes:
+def load_rubric_spec(path: Path) -> Dict[str, Any]:
     """
-    Render rubric_spec into a CSV compatible with the Rubrics Upload API.
-
-    Canvas' upload template is a CSV; the exact columns can be obtained from
-    GET /api/v1/rubrics/upload_template. Here we implement a simple, common
-    layout that works with the official template:
-
-        Criterion,Description,Points,Rating 1,Points 1,Rating 2,Points 2,...
-
-    Outcome-aligned criteria will ignore the outcome_id in CSV; outcomes can be
-    wired separately if needed.
+    Load rubric spec from YAML or JSON file.
     """
+    try:
+        if path.suffix.lower() in (".yaml", ".yml"):
+            return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        elif path.suffix.lower() == ".json":
+            return json.loads(path.read_text(encoding="utf-8"))
+        else:
+            raise ValueError(f"Unsupported rubric file extension {path.suffix}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to parse rubric file {path}: {e}")
 
-    title = rubric_spec.get("title", "Untitled Rubric")
-    criteria_spec = rubric_spec.get("criteria") or []
-    if not isinstance(criteria_spec, list):
-        raise ValueError("rubric.yaml 'criteria' must be a list")
 
-    output = io.StringIO()
-    writer = csv.writer(output)
+def build_rubric_payload(
+    rubric: Dict[str, Any],
+    assignment,
+) -> Dict[str, Any]:
+    """
+    Turn a rubric spec (YAML/JSON) into the form fields expected by
+    POST /api/v1/courses/:course_id/rubrics, associating it with an assignment.[web:549][web:551]
+    """
+    title = rubric.get("title")
+    if not title:
+        raise SystemExit("Rubric spec must define 'title'.")
 
-    # Header row; Canvas' template may include more columns, but these are core.
-    header = [
-        "Criterion",
-        "Description",
-        "Points",
-        "Rating 1",
-        "Points 1",
-        "Rating 2",
-        "Points 2",
-        "Rating 3",
-        "Points 3",
-        "Rating 4",
-        "Points 4",
-    ]
-    writer.writerow(header)
+    free_form = bool(rubric.get("free_form_criterion_comments", False))
 
-    for crit in criteria_spec:
-        crit_desc = crit.get("description", "")
-        long_desc = crit.get("long_description", "")
+    criteria = rubric.get("criteria") or []
+    if not criteria:
+        raise SystemExit("Rubric spec must define a non-empty 'criteria' list.")
+
+    assoc_cfg = rubric.get("association") or {}
+    # Association is always to an Assignment in this script
+    assoc_type = "Assignment"
+    assoc_id = str(assoc_cfg.get("id") or assignment.id)
+    assoc_purpose = assoc_cfg.get("purpose", "grading")
+    assoc_use_for_grading = bool(assoc_cfg.get("use_for_grading", True))
+
+    data: Dict[str, Any] = {
+        "title": title,
+        "rubric_id": "new",
+        "rubric[title]": title,
+        "rubric[free_form_criterion_comments]": "1" if free_form else "0",
+        "rubric_association[association_type]": assoc_type,
+        "rubric_association[association_id]": assoc_id,
+        "rubric_association[use_for_grading]": "1" if assoc_use_for_grading else "0",
+        "rubric_association[purpose]": assoc_purpose,
+        "rubric_association[title]": assignment.name,
+    }
+
+    for i, crit in enumerate(criteria):
+        c_desc = crit.get("description")
+        c_long = crit.get("long_description", "")
+        c_points = crit.get("points")
+        c_use_range = bool(crit.get("use_range", False))
         ratings = crit.get("ratings") or []
 
-        # Criterion-level points: use explicit points, else max of ratings, else 0.
-        if "points" in crit:
-            crit_points = float(crit["points"])
-        elif ratings:
-            crit_points = max((float(r.get("points", 0)) for r in ratings), default=0.0)
-        else:
-            crit_points = 0.0
+        if c_desc is None or c_points is None or not ratings:
+            raise SystemExit(
+                f"Criterion {i} must define 'description', 'points', and non-empty 'ratings'."
+            )
 
-        row: List[Any] = []
-        row.append(crit_desc)        # Criterion
-        row.append(long_desc)        # Description
-        row.append(crit_points)      # Points
+        base = f"rubric[criteria][{i}]"
+        data[f"{base}[description]"] = str(c_desc)
+        data[f"{base}[long_description]"] = str(c_long)
+        data[f"{base}[points]"] = str(c_points)
+        data[f"{base}[criterion_use_range]"] = "1" if c_use_range else "0"
 
-        # Up to 4 ratings; Canvas template often supports several.
-        for r in ratings[:4]:
-            row.append(r.get("description", ""))
-            row.append(r.get("points", 0))
-        # Pad remaining rating slots
-        remaining_slots = 4 - min(len(ratings), 4)
-        for _ in range(remaining_slots):
-            row.append("")
-            row.append("")
+        for j, rating in enumerate(ratings):
+            r_desc = rating.get("description")
+            r_long = rating.get("long_description", "")
+            r_points = rating.get("points")
+            if r_desc is None or r_points is None:
+                raise SystemExit(
+                    f"Criterion {i} rating {j} must define 'description' and 'points'."
+                )
+            rbase = f"{base}[ratings][{j}]"
+            data[f"{rbase}[description]"] = str(r_desc)
+            data[f"{rbase}[long_description]"] = str(r_long)
+            data[f"{rbase}[points]"] = str(r_points)
 
-        writer.writerow(row)
-
-    csv_str = output.getvalue()
-    print("[rubrics:debug] generated rubric CSV:")
-    print(csv_str)
-    return csv_str.encode("utf-8")
+    return data
 
 
-# ---------- Rubric upload + association ----------
+# ---------- Rubric creation ----------
 
-
-def upload_rubric_csv_to_course(
-    course: Course,
-    csv_bytes: bytes,
+def create_rubric_via_api(
+    course_id: str,
+    payload: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    POST /api/v1/courses/:course_id/rubrics/upload with the CSV file.
-
-    Returns the rubric import object returned by Canvas.
+    POST /api/v1/courses/:course_id/rubrics using the provided payload.[web:549][web:551]
     """
-    path = f"courses/{course.id}/rubrics/upload"
-    base = course._requester.base_url.rstrip("/")
-    if base.endswith("/api/v1"):
-        url = f"{base}/{path}"
-    else:
-        url = f"{base}/api/v1/{path}"
+    api_url, api_key = get_api_url_and_key()
 
-    session: requests.Session = course._requester._session
+    url = f"{api_url}/api/v1/courses/{course_id}/rubrics"
+    headers = {"Authorization": f"Bearer {api_key}"}
 
-    files = {
-        "attachment": ("rubric.csv", csv_bytes, "text/csv"),
-    }
+    resp = requests.post(url, headers=headers, data=payload)
+    print("[rubrics] POST", url)
+    print("[rubrics] Status:", resp.status_code)
+    print("[rubrics] Body:", resp.text)
 
-    print(f"[rubrics] Uploading rubric CSV for course {course.id}")
-    resp = session.post(url, files=files)
-    print("[rubrics:upload] status:", resp.status_code)
-    print("[rubrics:upload] body:", resp.text)
-
-    if resp.status_code not in (200, 201):
-        raise RuntimeError(f"Rubric upload failed with status {resp.status_code}")
-
-    return resp.json()
-
-
-def poll_rubric_upload_status(
-    course: Course,
-    import_id: int,
-    poll_interval: float = 1.0,
-    timeout: float = 60.0,
-) -> Dict[str, Any]:
-    """
-    Poll GET /api/v1/courses/:course_id/rubrics/upload/:id until complete or timeout.
-    """
-    path = f"courses/{course.id}/rubrics/upload/{import_id}"
-    base = course._requester.base_url.rstrip("/")
-    if base.endswith("/api/v1"):
-        url = f"{base}/{path}"
-    else:
-        url = f"{base}/api/v1/{path}"
-
-    session: requests.Session = course._requester._session
-
-    start = time.time()
-    while True:
-        resp = session.get(url)
-        print("[rubrics:upload_status] status:", resp.status_code)
-        print("[rubrics:upload_status] body:", resp.text)
-        if resp.status_code != 200:
-            raise RuntimeError(f"Rubric upload status error {resp.status_code}")
-
-        data = resp.json()
-        # The exact shape of the rubric import object is not fully documented,
-        # but typically there is a 'workflow_state' and, once complete, a rubric id.
-        state = data.get("workflow_state") or data.get("status")
-        if state in ("imported", "completed", "complete", "succeeded"):
-            return data
-        if state in ("failed", "failed_with_messages", "error"):
-            raise RuntimeError(f"Rubric upload failed with state {state}")
-
-        if time.time() - start > timeout:
-            raise TimeoutError("Timed out waiting for rubric upload to complete")
-
-        time.sleep(poll_interval)
-
-
-def create_rubric_association(
-    course: Course,
-    assignment,
-    rubric_id: int,
-    use_for_grading: bool = True,
-    purpose: str = "grading",
-) -> Dict[str, Any]:
-    """
-    POST /api/v1/courses/:course_id/rubric_associations to attach rubric to assignment.
-    """
-    path = f"courses/{course.id}/rubric_associations"
-    base = course._requester.base_url.rstrip("/")
-    if base.endswith("/api/v1"):
-        url = f"{base}/{path}"
-    else:
-        url = f"{base}/api/v1/{path}"
-
-    session: requests.Session = course._requester._session
-
-    data = {
-        "rubric_association[rubric_id]": str(rubric_id),
-        "rubric_association[association_id]": str(assignment.id),
-        "rubric_association[association_type]": "Assignment",
-        "rubric_association[title]": assignment.name,
-        "rubric_association[use_for_grading]": "1" if use_for_grading else "0",
-        "rubric_association[purpose]": purpose,
-    }
-
-    print(f"[rubrics] Creating rubric association rubric_id={rubric_id} -> assignment {assignment.id}")
-    resp = session.post(url, data=data)
-    print("[rubrics:assoc] status:", resp.status_code)
-    print("[rubrics:assoc] body:", resp.text)
-    if resp.status_code not in (200, 201):
-        raise RuntimeError(f"Rubric association failed with status {resp.status_code}")
-
-    return resp.json()
-
-
-def create_or_update_rubric_for_assignment_via_upload(
-    course: Course,
-    assignment,
-    rubric_spec: Dict[str, Any],
-    outcome_map: Dict[str, int],
-):
-    """
-    Full flow for one assignment:
-
-    - Build rubric CSV from rubric_spec.
-    - Upload CSV using Rubrics Upload API.
-    - Poll status to get created rubric id.
-    - Attach rubric to the assignment with RubricAssociations API.
-    """
-    title = rubric_spec.get("title", "Untitled Rubric")
-    print(f"[rubrics] Preparing rubric {title!r} for assignment {assignment.name!r}")
-
-    csv_bytes = build_rubric_csv(rubric_spec, outcome_map)
-
-    upload_obj = upload_rubric_csv_to_course(course, csv_bytes)
-    import_id = upload_obj.get("id") or upload_obj.get("rubric_import_id")
-    if import_id is None:
-        raise RuntimeError("Rubric upload response did not include an import id")
-
-    print(f"[rubrics] Polling upload status for import id {import_id}")
-    status_obj = poll_rubric_upload_status(course, int(import_id))
-
-    # The final rubric id might be under different keys depending on Canvas version.
-    rubric_id = (
-        status_obj.get("rubric_id")
-        or status_obj.get("id")
-        or status_obj.get("rubric", {}).get("id")
-    )
-    if rubric_id is None:
-        raise RuntimeError("Upload status did not include a rubric id")
-
-    print(f"[rubrics] Upload completed; rubric_id={rubric_id}")
-    create_rubric_association(course, assignment, int(rubric_id))
+    if resp.status_code in (200, 201):
+        return resp.json()
+    if resp.status_code in (401, 403):
+        raise RuntimeError("Not authorized to create rubrics (token/role lacks permission).")
+    if resp.status_code == 404:
+        raise RuntimeError("Rubrics endpoint not reachable (bad course id, base URL, or API disabled).")
+    if resp.status_code == 422:
+        raise RuntimeError(f"Rubric validation error (422): {resp.text}")
+    raise RuntimeError(f"Unexpected status {resp.status_code}: {resp.text}")
 
 
 # ---------- Per-folder processing ----------
 
-
-def process_assignment_folder(
-    course: Course,
-    folder: Path,
-    outcome_map: Dict[str, int],
-):
+def process_assignment_folder(course: Course, folder: Path):
     rubric_file = find_rubric_file(folder)
     if not rubric_file:
         print(f"[rubrics:skip] {folder.name}: no rubric.yaml/yml/json")
@@ -372,7 +261,13 @@ def process_assignment_folder(
         print(f"[rubrics:err] {folder.name}: {e}")
         return
 
+    ctype = str(meta.get("type", "")).lower()
     name = meta.get("name")
+
+    if ctype != "assignment":
+        print(f"[rubrics:skip] {folder.name}: meta.type is {ctype!r}, expected 'assignment'")
+        return
+
     if not name:
         print(f"[rubrics:err] {folder.name}: meta.json missing 'name'")
         return
@@ -382,48 +277,50 @@ def process_assignment_folder(
         print(f"[rubrics:err] {folder.name}: assignment name {name!r} not found in Canvas")
         return
 
-    # Load rubric spec from YAML/JSON
+    print(f"[rubrics] Processing {folder.name}: associating rubric to assignment {assignment.id} ({assignment.name})")
+
     try:
-        if rubric_file.suffix.lower() in (".yaml", ".yml"):
-            with rubric_file.open(encoding="utf-8") as f:
-                rubric_spec = yaml.safe_load(f) or {}
-        elif rubric_file.suffix.lower() == ".json":
-            with rubric_file.open(encoding="utf-8") as f:
-                rubric_spec = json.load(f)
-        else:
-            print(
-                f"[rubrics:err] {folder.name}: unsupported rubric file extension "
-                f"{rubric_file.suffix}"
-            )
-            return
+        rubric_spec = load_rubric_spec(rubric_file)
     except Exception as e:
-        print(f"[rubrics:err] {folder.name}: failed to parse {rubric_file.name}: {e}")
+        print(f"[rubrics:err] {folder.name}: failed to load rubric spec: {e}")
         return
 
     try:
-        create_or_update_rubric_for_assignment_via_upload(
-            course, assignment, rubric_spec, outcome_map
-        )
+        payload = build_rubric_payload(rubric_spec, assignment)
     except Exception as e:
-        print(f"[rubrics:err] {folder.name}: failed to create/update rubric via upload: {e}")
+        print(f"[rubrics:err] {folder.name}: invalid rubric spec: {e}")
+        return
 
+    try:
+        result = create_rubric_via_api(str(course.id), payload)
+        rubric = result.get("rubric") or {}
+        rubric_id = rubric.get("id")
+        print(f"[rubrics] Created rubric id={rubric_id} for assignment {assignment.id}")
+    except Exception as e:
+        print(f"[rubrics:err] {folder.name}: failed to create rubric: {e}")
+
+
+# ---------- Main ----------
 
 def main():
     course_id = os.environ.get("COURSE_ID")
     if not course_id:
         raise SystemExit("COURSE_ID is not set")
 
+    if not PAGES_DIR.exists():
+        raise SystemExit(f"No pages directory at {PAGES_DIR}")
+
     canvas = load_canvas()
     course = canvas.get_course(int(course_id))
 
-    outcome_map = load_outcome_map()
-    assignment_folders = iter_assignment_folders()
-    if not assignment_folders:
-        print("[rubrics] No .assignment folders found under", PAGES_DIR)
+    folders = iter_assignment_folders_with_rubrics()
+    if not folders:
+        print("[rubrics] No .assignment folders with rubric.yaml found under", PAGES_DIR)
         return
 
-    for folder in assignment_folders:
-        process_assignment_folder(course, folder, outcome_map)
+    print(f"[rubrics] Syncing rubrics for course {course.name} (ID {course_id})")
+    for folder in folders:
+        process_assignment_folder(course, folder)
         print()
 
     print("[rubrics] Done.")
