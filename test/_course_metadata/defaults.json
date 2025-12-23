@@ -1,6 +1,6 @@
 {
   "replacements": "replacements.json",
-  "style": "_styles/default",
+  "style": "templates/default",
   "markdown_extensions": [
     "codehilite",
     "fenced_code",
