@@ -19,9 +19,3 @@ def get_course_id(course_dir=None):
             return config.get("course_id")
     
     return None
-
-# Then use it:
-course_id = get_course_id()
-if not course_id:
-    print("COURSE_ID is not set")
-    sys.exit(1)
