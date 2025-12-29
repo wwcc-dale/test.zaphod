@@ -40,7 +40,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
-
+from config_utils import get_course_id
 import yaml  # pip install pyyaml
 from canvasapi import Canvas
 
@@ -469,7 +469,7 @@ def process_quiz_file(course, canvas: Canvas, path: Path, course_id: int):
 
 
 def main():
-    course_id = os.environ.get("COURSE_ID")
+    course_id = get_course_id()
     if not course_id:
         raise SystemExit("COURSE_ID is not set")
 

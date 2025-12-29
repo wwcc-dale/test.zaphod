@@ -26,9 +26,9 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 import requests
 import yaml
+from config_utils import get_course_id
 from canvasapi import Canvas
 from canvasapi.course import Course
 
@@ -303,7 +303,7 @@ def process_assignment_folder(course: Course, folder: Path):
 # ---------- Main ----------
 
 def main():
-    course_id = os.environ.get("COURSE_ID")
+    course_id = get_course_id()
     if not course_id:
         raise SystemExit("COURSE_ID is not set")
 

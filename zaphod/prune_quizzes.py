@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Dict, Any, Set
+from config_utils import get_course_id
 
 from canvasapi import Canvas  # [web:261][web:264]
 
@@ -137,7 +138,7 @@ def prune_stale_banks(course, apply: bool):
 
 
 def main():
-    course_id = os.environ.get("COURSE_ID")
+    course_id = get_course_id()
     if not course_id:
         raise SystemExit("COURSE_ID is not set")
 

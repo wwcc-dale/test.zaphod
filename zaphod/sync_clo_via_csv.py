@@ -21,8 +21,8 @@ import csv
 import os
 from pathlib import Path
 from typing import Dict, Any, List
-
 import yaml
+from config_utils import get_course_id
 from canvasapi import Canvas  # [web:166][web:165]
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -195,7 +195,7 @@ def main():
         print("[outcomes] outcomes.yaml not changed; skipping CLO sync.")
         return
 
-    course_id = os.environ.get("COURSE_ID")
+    course_id = get_course_id()
     if not course_id:
         raise SystemExit("COURSE_ID is not set")
     course_id_int = int(course_id)

@@ -33,7 +33,7 @@ Assumptions:
 from pathlib import Path
 import json
 import os
-
+from config_utils import get_course_id
 from canvasapi import Canvas
 import yaml
 
@@ -397,7 +397,7 @@ def apply_module_order(course, desired_order: list[str]):
 # ---------- Main ----------
 
 def main():
-    course_id = os.environ.get("COURSE_ID")
+    course_id = get_course_id()
     if not course_id:
         raise SystemExit("COURSE_ID is not set")
 
