@@ -45,7 +45,7 @@ import yaml  # pip install pyyaml
 from canvasapi import Canvas
 
 # Shared layout paths
-SCRIPT_DIR = Path(__file__).resolve().parent          # .../courses/zaphod/scripts
+SCRIPT_DIR = Path(__file__).resolve().parent          # .../courses/zaphod
 SHARED_ROOT = SCRIPT_DIR.parent                       # .../courses/zaphod
 COURSES_ROOT = SHARED_ROOT.parent                     # .../courses
 COURSE_ROOT = Path.cwd()                              # current course, e.g. .../courses/test

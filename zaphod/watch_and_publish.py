@@ -8,7 +8,7 @@ watch_and_publish.py (Zaphod)
 
 Assumptions:
 - You run this from a course root, e.g. ~/courses/test
-- Shared layout: ~/courses/zaphod/.venv and ~/courses/zaphod/scripts
+- Shared layout: ~/courses/zaphod/.venv and ~/courses/zaphod
 - Env:
     CANVAS_CREDENTIAL_FILE
     COURSE_ID
@@ -125,7 +125,7 @@ def run_pipeline(changed_files: list[Path]):
 
     PIPELINE_RUNNING = True
     try:
-        python_exe = SHARED_ROOT / ".venv" / "bin" / "python"
+        python_exe = Path(__file__).parent / ".venv" / "bin" / "python"
 
         env = os.environ.copy()
         env.setdefault(
@@ -171,7 +171,7 @@ def run_pipeline(changed_files: list[Path]):
         prune_apply = _truthy_env("ZAPHOD_PRUNE_APPLY")
         prune_assignments = _truthy_env("ZAPHOD_PRUNE_ASSIGNMENTS")
 
-        prune_script = SHARED_ROOT / "scripts" / "prune_canvas_content.py"
+        prune_script = SHARED_ROOT / "prune_canvas_content.py"
 
         if prune_script.is_file():
             args = [str(python_exe), str(prune_script), "--prune"]
@@ -190,7 +190,7 @@ def run_pipeline(changed_files: list[Path]):
         else:
             print(f"[watch] WARN: prune script not found at {prune_script}")
 
-        quiz_prune_script = SHARED_ROOT / "scripts" / "prune_quizzes.py"
+        quiz_prune_script = SHARED_ROOT / "prune_quizzes.py"
         if quiz_prune_script.is_file():
             fence(f"RUNNING: {quiz_prune_script.name}")
             subprocess.run(
