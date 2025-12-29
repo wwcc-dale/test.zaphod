@@ -1,4 +1,7 @@
 {
+  "course_id": "1259205",
+  "course_name": "Introduction to Python",
+  "canvas_api_url": "https://canvas.instructure.com",
   "replacements": "replacements.json",
   "style": "templates/default",
   "markdown_extensions": [

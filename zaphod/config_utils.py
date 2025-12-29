@@ -12,7 +12,7 @@ def get_course_id(course_dir=None):
     if course_dir is None:
         course_dir = Path.cwd()
     
-    config_path = Path(course_dir) / "course_config" / "defaults.json"
+    config_path = Path(course_dir) / "_course_metadata" / "defaults.json"
     if config_path.exists():
         with open(config_path) as f:
             config = json.load(f)

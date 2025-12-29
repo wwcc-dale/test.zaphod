@@ -1,13 +1,9 @@
----
-name: "Page Two"
-type: "Page"
-modules:
-  - "Credit 2"
-  - "Credit 5"
-published: true
----
 
-# Boom shakalaka
+#### peek a boo!
+
+![picture of zaphod](zaphod.jpg)
+
+# Welcome to Zaphod
 
 This content lives in `/home/chapman/courses/test/pages/intro.page` and is synced to Canvas.
 
@@ -15,3 +11,5 @@ This content lives in `/home/chapman/courses/test/pages/intro.page` and is synce
 
 - Author pages in Markdown.
 - Publish to Canvas via `markdown2canvas`.
+
+&copy; 2025 : Built with  Zaphod
