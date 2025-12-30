@@ -4,15 +4,16 @@ sync_clo_via_csv.py (Zaphod, CLOs with Canvas-style ratings)
 
 For the current course (cwd):
 
-- Reads _course_metadata/outcomes.yaml (course_outcomes)
-- Generates _course_metadata/outcomes_import.csv using Canvas Outcomes CSV format,
+- Reads outcomes/outcomes.yaml (course_outcomes)
+- Generates outcomes/outcomes_import.csv using Canvas Outcomes CSV format,
   including rating levels as separate CSV cells after the `ratings` header
   (points,description,points,description,...).
 - Imports that CSV into the course via Course.import_outcome().
 
 Incremental behavior:
+
 - If ZAPHOD_CHANGED_FILES is set, this script only runs when
-  _course_metadata/outcomes.yaml is among the changed paths.
+  outcomes/outcomes.yaml is among the changed paths.
 """
 
 from __future__ import annotations
@@ -21,20 +22,25 @@ import csv
 import os
 from pathlib import Path
 from typing import Dict, Any, List
+
 import yaml
 from config_utils import get_course_id
-from canvasapi import Canvas  # [web:166][web:165]
+from canvasapi import Canvas  # [web:49][web:92]
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SHARED_ROOT = SCRIPT_DIR.parent
 COURSES_ROOT = SHARED_ROOT.parent
 COURSE_ROOT = Path.cwd()
-COURSE_META_DIR = COURSE_ROOT / "_course_metadata"
-COURSE_OUTCOMES_YAML = COURSE_META_DIR / "outcomes.yaml"
-COURSE_OUTCOMES_CSV = COURSE_META_DIR / "outcomes_import.csv"
+
+# Use a course-level outcomes folder instead of _course_metadata.
+COURSE_OUTCOMES_DIR = COURSE_ROOT / "outcomes"
+COURSE_OUTCOMES_YAML = COURSE_OUTCOMES_DIR / "outcomes.yaml"
+COURSE_OUTCOMES_CSV = COURSE_OUTCOMES_DIR / "outcomes_import.csv"
 
 
 # ---------- helpers ----------
+
 
 def load_canvas() -> Canvas:
     cred_path = os.environ.get("CANVAS_CREDENTIAL_FILE")
@@ -53,7 +59,7 @@ def load_canvas() -> Canvas:
     except KeyError as e:
         raise SystemExit(f"Credentials file must define API_KEY and API_URL. Missing: {e}")
 
-    return Canvas(api_url, api_key)  # [web:166]
+    return Canvas(api_url, api_key)  # [web:38]
 
 
 def load_course_outcomes_yaml() -> Dict[str, Any]:
@@ -121,7 +127,7 @@ def build_rows(course_clos: List[Dict[str, Any]]) -> List[List[str]]:
 
 
 def write_csv(rows: List[List[str]]):
-    COURSE_META_DIR.mkdir(parents=True, exist_ok=True)
+    COURSE_OUTCOMES_DIR.mkdir(parents=True, exist_ok=True)
 
     max_len = max((len(r) for r in rows), default=10)
     base_headers = [
@@ -169,7 +175,7 @@ def import_csv_to_course(canvas: Canvas, course_id: int):
 def outcomes_yaml_changed() -> bool:
     """
     Return True if ZAPHOD_CHANGED_FILES is unset (full run) or
-    if _course_metadata/outcomes.yaml is listed among the changed paths.
+    if outcomes/outcomes.yaml is listed among the changed paths.
     """
     raw = os.environ.get("ZAPHOD_CHANGED_FILES", "").strip()
     if not raw:
@@ -184,11 +190,11 @@ def outcomes_yaml_changed() -> bool:
             continue
         if rel == COURSE_OUTCOMES_YAML.relative_to(COURSE_ROOT):
             return True
-
     return False
 
 
 # ---------- main ----------
+
 
 def main():
     if not outcomes_yaml_changed():
