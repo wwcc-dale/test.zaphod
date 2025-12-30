@@ -2,14 +2,83 @@
 from pathlib import Path
 import json
 import os
+import re
 
-import frontmatter  # python-frontmatter [web:101]
+
+import frontmatter  # python-frontmatter [web:12]
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SHARED_ROOT = SCRIPT_DIR.parent
 COURSES_ROOT = SHARED_ROOT.parent
 COURSE_ROOT = Path.cwd()          # always “current course”
 PAGES_DIR = COURSE_ROOT / "pages" # where applicable
+
+
+# {{{key}}} interpolation
+VAR_RE = re.compile(r"\{\{var:([a-zA-Z_][a-zA-Z0-9_-]*)\}\}")
+
+
+# {{{{include}}}} interpolation
+INCLUDE_RE = re.compile(r"\{\{include:([a-zA-Z_][a-zA-Z0-9_-]*)\}\}")
+
+
+def interpolate_body(body: str, metadata: dict) -> str:
+    """
+    Replace {{var:key}} in the body with corresponding values from metadata.
+    If a key is missing, leave the placeholder as-is.
+    """
+    def replace(match):
+        key = match.group(1)
+        if key not in metadata:
+            return match.group(0)
+        return str(metadata[key])
+
+    return VAR_RE.sub(replace, body)
+
+
+def resolve_include_path(folder: Path, name: str) -> Path | None:
+    """
+    Resolve an include name to a concrete file path following precedence:
+    1) <course>/pages/includes/name.md
+    2) <course>/includes/name.md
+    3) <root>/_all_courses/includes/name.md
+    """
+    candidates = [
+        COURSE_ROOT / "pages" / "includes" / f"{name}.md",
+        COURSE_ROOT / "includes" / f"{name}.md",
+        COURSES_ROOT.parent / "_all_courses" / "includes" / f"{name}.md",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def interpolate_includes(body: str, folder: Path, metadata: dict) -> str:
+    """
+    Replace {{include:name}} in the body with the contents of the first
+    matching includes/name.md, using the precedence rules above.
+    Each included file is also processed with {{var:...}} interpolation.
+    """
+    def replace(match):
+        name = match.group(1)
+        inc_path = resolve_include_path(folder, name)
+        if not inc_path:
+            print(f"[frontmatter:warn] {folder.name}: include '{name}' not found")
+            return match.group(0)
+        try:
+            inc_content = inc_path.read_text(encoding="utf-8")
+            # Apply {{var:...}} to the include content
+            inc_content = interpolate_body(inc_content, metadata)
+            # Recursively expand any {{include:...}} inside the include
+            inc_content = interpolate_includes(inc_content, folder, metadata)
+            return inc_content
+        except Exception as e:
+            print(f"[frontmatter:warn] {folder.name}: failed to read include '{name}': {e}")
+            return match.group(0)
+
+    return INCLUDE_RE.sub(replace, body)
 
 
 def get_changed_files() -> list[Path]:
@@ -84,9 +153,16 @@ def process_folder(folder: Path):
     # 1) Preferred: index.md with frontmatter
     if has_index:
         try:
-            post = frontmatter.load(index_path)  # [web:98][web:101]
+            post = frontmatter.load(index_path)  # [web:12]
             metadata = dict(post.metadata)
             content = post.content.strip() + "\n"
+
+            # First: expand includes, with {{var:...}} applied to each include
+            content = interpolate_includes(content, folder, metadata)
+
+            # Then: {{var:...}} in the main body
+            content = interpolate_body(content, metadata)
+
         except Exception as e:
             print(f"[frontmatter:warn] {folder.name}: {e}")
         else:

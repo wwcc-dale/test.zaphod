@@ -171,7 +171,7 @@ def run_pipeline(changed_files: list[Path]):
         prune_apply = _truthy_env("ZAPHOD_PRUNE_APPLY")
         prune_assignments = _truthy_env("ZAPHOD_PRUNE_ASSIGNMENTS")
 
-        prune_script = SHARED_ROOT / "prune_canvas_content.py"
+        prune_script = SCRIPT_DIR / "prune_canvas_content.py"
 
         if prune_script.is_file():
             args = [str(python_exe), str(prune_script), "--prune"]
@@ -190,7 +190,7 @@ def run_pipeline(changed_files: list[Path]):
         else:
             print(f"[watch] WARN: prune script not found at {prune_script}")
 
-        quiz_prune_script = SHARED_ROOT / "prune_quizzes.py"
+        quiz_prune_script = SCRIPT_DIR / "prune_quizzes.py"
         if quiz_prune_script.is_file():
             fence(f"RUNNING: {quiz_prune_script.name}")
             subprocess.run(

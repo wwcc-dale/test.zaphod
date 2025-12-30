@@ -232,9 +232,9 @@ def create_rubric_via_api(
     headers = {"Authorization": f"Bearer {api_key}"}
 
     resp = requests.post(url, headers=headers, data=payload)
-    print("[rubrics] POST", url)
-    print("[rubrics] Status:", resp.status_code)
-    print("[rubrics] Body:", resp.text)
+    # print("[rubrics] POST", url)
+    # print("[rubrics] Status:", resp.status_code)
+    # print("[rubrics] Body:", resp.text)
 
     if resp.status_code in (200, 201):
         return resp.json()
