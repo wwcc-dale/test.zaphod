@@ -36,8 +36,11 @@ SHARED_ROOT = SCRIPT_DIR.parent
 COURSES_ROOT = SHARED_ROOT.parent
 COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
+MODULE_ORDER_PATH = COURSE_ROOT / "modules" / "module_order.yaml"
 
-STATE_FILE = COURSE_ROOT / ".zaphod_watch_state.json"
+# Centralized metadata directory for all course state
+METADATA_DIR = COURSE_ROOT / "_course_metadata"
+STATE_FILE = METADATA_DIR / "watch_state.json"
 
 DOT_LINE = "." * 70  # ~70-column visual separator
 
@@ -63,6 +66,7 @@ def _truthy_env(name: str) -> bool:
 # ---------- incremental state helpers ----------
 
 def load_state() -> dict:
+    """Load watch state from _course_metadata/watch_state.json"""
     if not STATE_FILE.is_file():
         return {}
     try:
@@ -72,7 +76,12 @@ def load_state() -> dict:
 
 
 def save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    """Save watch state to _course_metadata/watch_state.json"""
+    try:
+        METADATA_DIR.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps(state, indent=2))
+    except Exception as e:
+        print(f"[watch:warn] Failed to save state: {e}")
 
 
 def get_last_run_time() -> float:
@@ -83,12 +92,20 @@ def get_last_run_time() -> float:
 def set_last_run_time(ts: float) -> None:
     state = load_state()
     state["last_run_ts"] = ts
+
+    # Track additional metadata
+    if "run_count" not in state:
+        state["run_count"] = 0
+    state["run_count"] += 1
+    state["last_run_datetime"] = datetime.now().isoformat()
+
     save_state(state)
 
 
 def get_changed_files_since(last_ts: float) -> list[Path]:
     changed: list[Path] = []
-    module_order_path = COURSE_ROOT / "_course_metadata" / "module_order.yaml"
+    module_order_path = MODULE_ORDER_PATH
+
 
     for path in COURSE_ROOT.rglob("*"):
         if not path.is_file():
@@ -215,7 +232,7 @@ class MarkdownChangeHandler(PatternMatchingEventHandler):
             patterns=[
                 "*/index.md",                    # pages/*/index.md
                 "outcomes.yaml",
-                "_course_metadata/module_order.yaml",
+                "modules/module_order.yaml",
                 "*.quiz.txt",
                 "rubric.yaml",
                 "rubric.yml",
@@ -280,13 +297,21 @@ def main():
     observer.start()
 
     print(f"[watch] WATCHING: {PAGES_DIR} (index.md only)")
-    print(f"[watch] COURSE_ROOT: {COURSE_ROOT}\n")
+    print(f"[watch] COURSE_ROOT: {COURSE_ROOT}")
+    print(f"[watch] STATE_FILE: {STATE_FILE}\n")
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
+        print("\n[watch] Stopping...")
+
+        # Save final state with session info
+        state = load_state()
+        state["watch_stopped"] = datetime.now().isoformat()
+        save_state(state)
+
     observer.join()
 
 
