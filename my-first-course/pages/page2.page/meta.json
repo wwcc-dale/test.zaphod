@@ -1,9 +1,0 @@
-{
-  "name": "Page Two",
-  "type": "Page",
-  "modules": [
-    "Credit 1",
-    "Credit 5"
-  ],
-  "published": true
-}
