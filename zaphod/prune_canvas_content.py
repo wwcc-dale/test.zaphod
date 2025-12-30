@@ -46,8 +46,7 @@ SHARED_ROOT = SCRIPT_DIR.parent
 COURSES_ROOT = SHARED_ROOT.parent
 COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
-
-MODULE_ORDER_PATH = COURSE_ROOT / "_course_metadata" / "module_order.yaml"
+MODULE_ORDER_PATH = COURSE_ROOT / "modules" / "module_order.yaml"
 
 AUTO_WORK_FILES = {
     "styled_source.md",

@@ -41,7 +41,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 COURSE_ROOT = Path.cwd()
 PAGES_DIR = COURSE_ROOT / "pages"
 COURSE_META_DIR = COURSE_ROOT / "_course_metadata"
-MODULE_ORDER_PATH = COURSE_META_DIR / "module_order.yaml"
+MODULE_ORDER_PATH = COURSE_ROOT / "modules" / "module_order.yaml"
 
 
 # ---------- changed-files helpers ----------
