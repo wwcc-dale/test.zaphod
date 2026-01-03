@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""
+# Zaphod
+# Copyright (c) 2026 Dale Chapman
+# Licensed under the MIT License. See LICENSE in the project root.
+
+publish_all.py (Zaphod)
+
+"""
 from pathlib import Path
 import os
 import json

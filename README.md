@@ -441,4 +441,7 @@ Zaphod was built with the assistance of GPT-4o through [perplexity.ai](perplexit
 Together, these move Zaphod toward a full curriculum‑level pipeline where outcomes, topics, content, quizzes, and rubrics live in a coherent, version‑controlled text representation synchronized to Canvas.
 
 ---
-&copy; 2005 Dale Chapman
+## License
+&copy; 2026 Dale Chapman
+Zaphod is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+

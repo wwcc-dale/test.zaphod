@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-r"""
+"""
+# Zaphod
+# Copyright (c) 2026 Dale Chapman
+# Licensed under the MIT License. See LICENSE in the project root.
+
 scrape_and_prep.py
 
 Convert a course codebase into a Zaphod-compatible structure.

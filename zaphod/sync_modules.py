@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 """
+# Zaphod
+# Copyright (c) 2026 Dale Chapman
+# Licensed under the MIT License. See LICENSE in the project root.
+
 sync_modules.py (Zaphod)
 
 Ensure Canvas modules contain all items declared in meta.json for:

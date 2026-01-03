@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 """
+# Zaphod
+# Copyright (c) 2026 Dale Chapman
+# Licensed under the MIT License. See LICENSE in the project root.
+
 watch_and_publish.py (Zaphod)
 
 - Watches pages/**/index.md in the current course for changes.

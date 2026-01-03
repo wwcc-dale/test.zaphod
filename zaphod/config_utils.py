@@ -1,3 +1,9 @@
+"""
+# Zaphod
+# Copyright (c) 2026 Dale Chapman
+# Licensed under the MIT License. See LICENSE in the project root.
+"""
+
 import os
 import json
 from pathlib import Path
